@@ -45,7 +45,7 @@ def get_medication_analytics(cluster_id):
             COUNT(DISTINCT mo.id) as order_count
         FROM {DB_STORE}.medication_order mo
         JOIN {DB_SCHEMA}.ecl_cache ec ON mo.mapped_concept_code = ec.code
-        JOIN REPORTING.OLIDS_PERSON_DEMOGRAPHICS.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
+        JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
         WHERE ec.cluster_id = '{cluster_id}'
         GROUP BY ec.code, ec.display
         ORDER BY person_count DESC
@@ -66,7 +66,7 @@ def get_distinct_persons_med(cluster_id):
             COUNT(DISTINCT mo.id) as total_orders
         FROM {DB_STORE}.medication_order mo
         JOIN {DB_SCHEMA}.ecl_cache ec ON mo.mapped_concept_code = ec.code
-        JOIN REPORTING.OLIDS_PERSON_DEMOGRAPHICS.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
+        JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
         WHERE ec.cluster_id = '{cluster_id}'
         """
         result = conn.sql(query).to_pandas()
@@ -89,7 +89,7 @@ def get_medication_time_series(cluster_id):
             COUNT(DISTINCT mo.id) as order_count
         FROM {DB_STORE}.medication_order mo
         JOIN {DB_SCHEMA}.ecl_cache ec ON mo.mapped_concept_code = ec.code
-        JOIN REPORTING.OLIDS_PERSON_DEMOGRAPHICS.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
+        JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
         WHERE ec.cluster_id = '{cluster_id}'
         AND mo.clinical_effective_date >= DATE_TRUNC('month', DATEADD(month, -60, CURRENT_DATE()))
         AND mo.clinical_effective_date < DATE_TRUNC('month', CURRENT_DATE())
@@ -159,7 +159,7 @@ def get_medication_time_series(cluster_id):
             COUNT(DISTINCT mo.id) as order_count
         FROM {DB_STORE}.medication_order mo
         JOIN {DB_SCHEMA}.ecl_cache ec ON mo.mapped_concept_code = ec.code
-        JOIN REPORTING.OLIDS_PERSON_DEMOGRAPHICS.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
+        JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
         WHERE ec.cluster_id = '{cluster_id}'
         AND mo.clinical_effective_date >= DATE_TRUNC('month', DATEADD(month, -60, CURRENT_DATE()))
         AND mo.clinical_effective_date < DATE_TRUNC('month', CURRENT_DATE())
@@ -183,8 +183,8 @@ def get_cluster_demographics(cluster_id, cluster_type):
             SELECT 
                 COUNT(DISTINCT CASE WHEN d.is_active = true THEN d.person_id END) as total_patients,
                 AVG(CASE WHEN d.is_active = true THEN d.age END) as avg_age,
-                COUNT(DISTINCT CASE WHEN d.is_active = true AND d.sex = 'Male' THEN d.person_id END) as male_count,
-                COUNT(DISTINCT CASE WHEN d.is_active = true AND d.sex = 'Female' THEN d.person_id END) as female_count
+                COUNT(DISTINCT CASE WHEN d.is_active = true AND d.gender = 'Male' THEN d.person_id END) as male_count,
+                COUNT(DISTINCT CASE WHEN d.is_active = true AND d.gender = 'Female' THEN d.person_id END) as female_count
             FROM {DB_STORE}.observation o
             JOIN {DB_SCHEMA}.ecl_cache ec ON o.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
@@ -196,8 +196,8 @@ def get_cluster_demographics(cluster_id, cluster_type):
             SELECT 
                 COUNT(DISTINCT CASE WHEN d.is_active = true THEN d.person_id END) as total_patients,
                 AVG(CASE WHEN d.is_active = true THEN d.age END) as avg_age,
-                COUNT(DISTINCT CASE WHEN d.is_active = true AND d.sex = 'Male' THEN d.person_id END) as male_count,
-                COUNT(DISTINCT CASE WHEN d.is_active = true AND d.sex = 'Female' THEN d.person_id END) as female_count
+                COUNT(DISTINCT CASE WHEN d.is_active = true AND d.gender = 'Male' THEN d.person_id END) as male_count,
+                COUNT(DISTINCT CASE WHEN d.is_active = true AND d.gender = 'Female' THEN d.person_id END) as female_count
             FROM {DB_STORE}.medication_order m
             JOIN {DB_SCHEMA}.ecl_cache ec ON m.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON m.person_id = d.person_id
@@ -219,29 +219,31 @@ def get_cluster_age_sex_distribution(cluster_id, cluster_type):
             query = f"""
             SELECT 
                 d.age_band_5y AS AGE_BAND,
-                d.sex AS SEX,
+                d.gender AS SEX,
                 COUNT(DISTINCT d.person_id) AS PATIENT_COUNT
             FROM {DB_STORE}.observation o
             JOIN {DB_SCHEMA}.ecl_cache ec ON o.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
-            GROUP BY d.age_band_5y, d.sex
-            ORDER BY d.age_band_5y, d.sex
+            AND d.gender IN ('Male', 'Female')
+            GROUP BY d.age_band_5y, d.gender
+            ORDER BY d.age_band_5y, d.gender
             """
         else:  # MEDICATION
             query = f"""
             SELECT 
                 d.age_band_5y AS AGE_BAND,
-                d.sex AS SEX,
+                d.gender AS SEX,
                 COUNT(DISTINCT d.person_id) AS PATIENT_COUNT
             FROM {DB_STORE}.medication_order m
             JOIN {DB_SCHEMA}.ecl_cache ec ON m.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON m.person_id = d.person_id
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
-            GROUP BY d.age_band_5y, d.sex
-            ORDER BY d.age_band_5y, d.sex
+            AND d.gender IN ('Male', 'Female')
+            GROUP BY d.age_band_5y, d.gender
+            ORDER BY d.age_band_5y, d.gender
             """
         
         return conn.sql(query).to_pandas()
@@ -262,8 +264,8 @@ def get_cluster_care_team_analysis(cluster_id, cluster_type):
                 d.pcn_name as pcn_name,
                 COUNT(DISTINCT d.person_id) as total_patients,
                 AVG(d.age) as avg_age,
-                COUNT(DISTINCT CASE WHEN d.sex = 'Male' THEN d.person_id END) as male_count,
-                COUNT(DISTINCT CASE WHEN d.sex = 'Female' THEN d.person_id END) as female_count,
+                COUNT(DISTINCT CASE WHEN d.gender = 'Male' THEN d.person_id END) as male_count,
+                COUNT(DISTINCT CASE WHEN d.gender = 'Female' THEN d.person_id END) as female_count,
                 COUNT(DISTINCT CASE WHEN d.age < 15 THEN d.person_id END) as children_count,
                 COUNT(DISTINCT CASE WHEN d.age >= 65 THEN d.person_id END) as elderly_count
             FROM {DB_STORE}.observation o
@@ -282,8 +284,8 @@ def get_cluster_care_team_analysis(cluster_id, cluster_type):
                 d.pcn_name as pcn_name,
                 COUNT(DISTINCT d.person_id) as total_patients,
                 AVG(d.age) as avg_age,
-                COUNT(DISTINCT CASE WHEN d.sex = 'Male' THEN d.person_id END) as male_count,
-                COUNT(DISTINCT CASE WHEN d.sex = 'Female' THEN d.person_id END) as female_count,
+                COUNT(DISTINCT CASE WHEN d.gender = 'Male' THEN d.person_id END) as male_count,
+                COUNT(DISTINCT CASE WHEN d.gender = 'Female' THEN d.person_id END) as female_count,
                 COUNT(DISTINCT CASE WHEN d.age < 15 THEN d.person_id END) as children_count,
                 COUNT(DISTINCT CASE WHEN d.age >= 65 THEN d.person_id END) as elderly_count
             FROM {DB_STORE}.medication_order m
@@ -321,7 +323,7 @@ def get_cluster_standardized_rates(cluster_id, cluster_type, agg_level="Borough"
         
         # Get date column name and join logic based on cluster type
         if cluster_type == 'OBSERVATION':
-            date_col = "CLINICAL_EFFECTIVE_DATE"
+            date_col = "CLINICAL_EFFECTIVE_DATE"  # observation event date
             # Optimized query for observations - start from cluster codes
             query = f"""
             WITH cluster_patients AS (
@@ -371,7 +373,7 @@ def get_cluster_standardized_rates(cluster_id, cluster_type, agg_level="Borough"
             ORDER BY rate_per_1000 DESC
             """
         else:  # MEDICATION
-            date_col = "ORDER_DATE"
+            date_col = "CLINICAL_EFFECTIVE_DATE"
             # Optimized query for medications - start from cluster codes
             query = f"""
             WITH cluster_patients AS (
@@ -384,7 +386,7 @@ def get_cluster_standardized_rates(cluster_id, cluster_type, agg_level="Borough"
                     MAX(mo.{date_col}) AS last_code_date
                 FROM {DB_SCHEMA}.ecl_cache ec
                 JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
-                JOIN REPORTING.OLIDS_PERSON_DEMOGRAPHICS.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
+                JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
                 WHERE ec.cluster_id = '{cluster_id}'
                 AND d.is_active = true
                 AND d.{group_col} IS NOT NULL
@@ -467,7 +469,7 @@ def get_cluster_ethnicity_analysis(cluster_id, cluster_type):
                 COUNT(DISTINCT d.person_id) * 1000.0 / tp.total_count AS RATE_PER_1000
             FROM {DB_SCHEMA}.ecl_cache ec
             JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
-            JOIN REPORTING.OLIDS_PERSON_DEMOGRAPHICS.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
+            JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
             CROSS JOIN total_pop tp
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
@@ -524,7 +526,7 @@ def get_cluster_deprivation_analysis(cluster_id, cluster_type):
                 COUNT(DISTINCT d.person_id) * 1000.0 / tp.total_count AS RATE_PER_1000
             FROM {DB_SCHEMA}.ecl_cache ec
             JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
-            JOIN REPORTING.OLIDS_PERSON_DEMOGRAPHICS.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
+            JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
             CROSS JOIN total_pop tp
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
@@ -568,7 +570,7 @@ def get_cluster_language_analysis(cluster_id, cluster_type):
                 COUNT(DISTINCT d.person_id) AS PATIENT_COUNT
             FROM {DB_STORE}.medication_order mo
             JOIN {DB_SCHEMA}.ecl_cache ec ON mo.mapped_concept_code = ec.code
-            JOIN REPORTING.OLIDS_PERSON_DEMOGRAPHICS.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
+            JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
             AND d.main_language IS NOT NULL
@@ -626,7 +628,7 @@ def get_cluster_neighbourhood_analysis(cluster_id, cluster_type):
                 COUNT(DISTINCT d.person_id) * 1000.0 / tp.total_count AS RATE_PER_1000
             FROM {DB_SCHEMA}.ecl_cache ec
             JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
-            JOIN REPORTING.OLIDS_PERSON_DEMOGRAPHICS.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
+            JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
             CROSS JOIN total_pop tp
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true

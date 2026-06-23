@@ -379,7 +379,7 @@ SELECT DISTINCT
     d.person_id,
     d.practice_name,
     d.age,
-    d.sex,
+    d.gender,
     COUNT(DISTINCT o.id) as observation_count,
     MIN(o.clinical_effective_date) as first_observation,
     MAX(o.clinical_effective_date) as last_observation
@@ -388,7 +388,7 @@ JOIN {DB_STORE}.observation o ON ec.code = o.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
 WHERE ec.cluster_id = '{cluster_id}'
 AND d.is_active = true
-GROUP BY d.person_id, d.practice_name, d.age, d.sex
+GROUP BY d.person_id, d.practice_name, d.age, d.gender
 ORDER BY observation_count DESC;"""
                 st.code(query2, language='sql')
                 
@@ -435,7 +435,7 @@ ORDER BY month DESC;"""
                 query5 = f"""-- Get demographic breakdown for cluster {cluster_id}
 SELECT 
     d.age_band_5y,
-    d.sex,
+    d.gender,
     d.ethnicity_category,
     COUNT(DISTINCT d.person_id) as patient_count
 FROM {DB_SCHEMA}.ecl_cache ec
@@ -443,8 +443,8 @@ JOIN {DB_STORE}.observation o ON ec.code = o.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
 WHERE ec.cluster_id = '{cluster_id}'
 AND d.is_active = true
-GROUP BY d.age_band_5y, d.sex, d.ethnicity_category
-ORDER BY d.age_band_5y, d.sex, d.ethnicity_category;"""
+GROUP BY d.age_band_5y, d.gender, d.ethnicity_category
+ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                 st.code(query5, language='sql')
                 
         elif cluster_type == 'MEDICATION':
@@ -749,7 +749,7 @@ SELECT DISTINCT
     d.person_id,
     d.practice_name,
     d.age,
-    d.sex,
+    d.gender,
     COUNT(DISTINCT mo.id) as order_count,
     MIN(mo.clinical_effective_date) as first_order,
     MAX(mo.clinical_effective_date) as last_order
@@ -758,7 +758,7 @@ JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
 WHERE ec.cluster_id = '{cluster_id}'
 AND d.is_active = true
-GROUP BY d.person_id, d.practice_name, d.age, d.sex
+GROUP BY d.person_id, d.practice_name, d.age, d.gender
 ORDER BY order_count DESC;"""
                 st.code(query2, language='sql')
                 
