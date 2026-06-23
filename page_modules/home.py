@@ -3,6 +3,7 @@
 # Single search across all codesets: authored here + brought in
 # =============================================================================
 
+import math
 import streamlit as st
 import pandas as pd
 from database import rerun
@@ -10,7 +11,7 @@ from components.cluster_components import render_flash_message
 from services.codeset_service import get_codeset_index, source_label
 from config import CLUSTER_TYPE_DISPLAY
 
-RENDER_CAP = 100  # max rows rendered at once; users refine with search
+PAGE_SIZE = 50  # codesets rendered per page
 
 
 def _open_codeset(source, cluster_id, page):
@@ -72,6 +73,7 @@ def render_home():
         df = brought_df
 
     # Source filter for brought-in codesets
+    chosen = []
     if scope in ("Brought-in", "All"):
         sources = sorted(brought_df['SOURCE'].unique().tolist())
         chosen = st.multiselect(
@@ -92,11 +94,43 @@ def render_home():
         st.info("No codesets match your search.")
         return
 
-    # Authored first, then alphabetical; cap rendering for performance
+    # Authored first, then alphabetical
     df = df.sort_values(['IS_AUTHORED', 'CLUSTER_ID'], ascending=[False, True])
-    shown = df.head(RENDER_CAP)
-    note = "  ·  refine your search to narrow further" if total > RENDER_CAP else ""
-    st.caption(f"Showing {len(shown)} of {total:,} codeset(s){note}")
+
+    # Paginate. Reset to page 1 whenever the filter changes.
+    total_pages = max(1, math.ceil(total / PAGE_SIZE))
+    sig = (search_term, scope, tuple(sorted(chosen)))
+    if st.session_state.get('home_sig') != sig:
+        st.session_state['home_sig'] = sig
+        st.session_state['home_page'] = 1
+    page = max(1, min(st.session_state.get('home_page', 1), total_pages))
+    st.session_state['home_page'] = page
+
+    if total_pages > 1:
+        pc1, pc2, pc3 = st.columns([1, 2, 1])
+        with pc1:
+            if st.button("← Prev", disabled=page <= 1, use_container_width=True):
+                st.session_state['home_page'] = page - 1
+                rerun()
+        with pc2:
+            jump = st.number_input(
+                "Page", min_value=1, max_value=total_pages, value=page, step=1,
+                label_visibility="collapsed"
+            )
+            if int(jump) != page:
+                st.session_state['home_page'] = int(jump)
+                rerun()
+        with pc3:
+            if st.button("Next →", disabled=page >= total_pages, use_container_width=True):
+                st.session_state['home_page'] = page + 1
+                rerun()
+
+    start = (page - 1) * PAGE_SIZE
+    shown = df.iloc[start:start + PAGE_SIZE]
+    st.caption(
+        f"Showing {start + 1:,}-{min(start + PAGE_SIZE, total):,} of {total:,} codeset(s)"
+        f"  ·  page {page} of {total_pages}"
+    )
 
     for _, row in shown.iterrows():
         is_authored = bool(row['IS_AUTHORED'])
