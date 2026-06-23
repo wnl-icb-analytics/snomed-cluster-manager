@@ -286,20 +286,20 @@ def create_ethnicity_bar_chart(df):
     st.altair_chart(chart, use_container_width=True)
 
 
-def create_deprivation_line_chart(df):
-    """Create line chart showing deprivation gradient"""
+def create_deprivation_bar_chart(df):
+    """Create bar chart showing deprivation gradient by IMD decile"""
     if df.empty:
         st.warning("No deprivation data available")
         return
-    
-    chart = alt.Chart(df).mark_line(
-        point=True,
-        strokeWidth=3
-    ).encode(
-        x=alt.X('IMD_DECILE:O', 
+
+    chart = alt.Chart(df).mark_bar().encode(
+        x=alt.X('IMD_DECILE:O',
                title='IMD Decile (1=Most Deprived, 10=Least Deprived)'),
-        y=alt.Y('RATE_PER_1000:Q', 
+        y=alt.Y('RATE_PER_1000:Q',
                title='Rate per 1,000 population'),
+        color=alt.Color('RATE_PER_1000:Q',
+                       scale=alt.Scale(scheme='blues'),
+                       legend=None),
         tooltip=[
             alt.Tooltip('IMD_DECILE:O', title='IMD Decile'),
             alt.Tooltip('IMD_QUINTILE:N', title='IMD Quintile'),
@@ -311,7 +311,7 @@ def create_deprivation_line_chart(df):
         height=300,
         title='Social Gradient: Prevalence by Deprivation Decile'
     )
-    
+
     st.altair_chart(chart, use_container_width=True)
 
 

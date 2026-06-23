@@ -17,7 +17,7 @@ from services.analytics_service import (
 from components.chart_components import create_practice_scatter, create_org_bar_chart
 from utils.charts import (
     create_population_pyramid, create_age_slope_chart, create_ethnicity_bar_chart,
-    create_deprivation_line_chart, create_language_bar_chart, create_neighbourhood_bar_chart
+    create_deprivation_bar_chart, create_language_bar_chart, create_neighbourhood_bar_chart
 )
 from config import DB_ANALYTICS, DB_SCHEMA, DB_STORE, DB_DEMOGRAPHICS
 
@@ -332,7 +332,7 @@ def render_analytics():
                     # Deprivation Analysis
                     st.subheader("💰 Social Deprivation")
                     if not deprivation_data.empty:
-                        create_deprivation_line_chart(deprivation_data)
+                        create_deprivation_bar_chart(deprivation_data)
                     else:
                         st.info("No deprivation data available")
                     
@@ -702,7 +702,7 @@ ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                     # Deprivation Analysis
                     st.subheader("💰 Social Deprivation")
                     if not deprivation_data.empty:
-                        create_deprivation_line_chart(deprivation_data)
+                        create_deprivation_bar_chart(deprivation_data)
                     else:
                         st.info("No deprivation data available")
                     
