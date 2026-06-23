@@ -106,25 +106,6 @@ def render_home():
     page = max(1, min(st.session_state.get('home_page', 1), total_pages))
     st.session_state['home_page'] = page
 
-    if total_pages > 1:
-        pc1, pc2, pc3 = st.columns([1, 2, 1])
-        with pc1:
-            if st.button("← Prev", disabled=page <= 1, use_container_width=True):
-                st.session_state['home_page'] = page - 1
-                rerun()
-        with pc2:
-            jump = st.number_input(
-                "Page", min_value=1, max_value=total_pages, value=page, step=1,
-                label_visibility="collapsed"
-            )
-            if int(jump) != page:
-                st.session_state['home_page'] = int(jump)
-                rerun()
-        with pc3:
-            if st.button("Next →", disabled=page >= total_pages, use_container_width=True):
-                st.session_state['home_page'] = page + 1
-                rerun()
-
     start = (page - 1) * PAGE_SIZE
     shown = df.iloc[start:start + PAGE_SIZE]
     st.caption(
@@ -164,3 +145,24 @@ def render_home():
                     _open_codeset(source, cid, 'edit')
 
         st.markdown("<div style='margin:6px 0;'></div>", unsafe_allow_html=True)
+
+    # Pagination controls (bottom)
+    if total_pages > 1:
+        st.markdown("---")
+        pc1, pc2, pc3 = st.columns([1, 2, 1])
+        with pc1:
+            if st.button("← Prev", disabled=page <= 1, use_container_width=True):
+                st.session_state['home_page'] = page - 1
+                rerun()
+        with pc2:
+            jump = st.number_input(
+                "Page", min_value=1, max_value=total_pages, value=page, step=1,
+                label_visibility="collapsed"
+            )
+            if int(jump) != page:
+                st.session_state['home_page'] = int(jump)
+                rerun()
+        with pc3:
+            if st.button("Next →", disabled=page >= total_pages, use_container_width=True):
+                st.session_state['home_page'] = page + 1
+                rerun()
