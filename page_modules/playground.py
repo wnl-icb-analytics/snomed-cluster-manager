@@ -32,47 +32,41 @@ def render_playground():
     """)
     
     # Initialize session state for playground ECL and results
-    if 'playground_ecl' not in st.session_state:
-        st.session_state.playground_ecl = ""
+    if 'ecl_input' not in st.session_state:
+        st.session_state.ecl_input = ""
     if 'playground_test_results' not in st.session_state:
         st.session_state.playground_test_results = None
     if 'playground_tested_ecl' not in st.session_state:
         st.session_state.playground_tested_ecl = None
-    
-    # Handle example selection
+
+    # Load an example or an expression passed from the details page into the input.
+    # Write to the widget key directly - a `value=` arg is ignored once the widget
+    # key exists in session state, so setting another variable wouldn't update it.
     if "selected_example_ecl" in st.session_state:
-        st.session_state.playground_ecl = st.session_state["selected_example_ecl"]
-        del st.session_state["selected_example_ecl"]
-    
-    # Handle navigation from details page
+        st.session_state.ecl_input = st.session_state.pop("selected_example_ecl")
     if "ecl_test_expr" in st.session_state:
-        st.session_state.playground_ecl = st.session_state["ecl_test_expr"]
-        del st.session_state["ecl_test_expr"]
-    
-    # ECL input - use session state to persist value
+        st.session_state.ecl_input = st.session_state.pop("ecl_test_expr")
+
+    # ECL input - value persists across reruns via the widget key
     ecl_expression = st.text_area(
         "ECL Expression",
-        value=st.session_state.playground_ecl,
         height=150,
         placeholder="Enter ECL expression, e.g., << 73211009 |Diabetes mellitus|",
         help="Enter a SNOMED CT ECL expression to test",
-        key="ecl_input",
-        on_change=lambda: st.session_state.update({"playground_ecl": st.session_state["ecl_input"]})
+        key="ecl_input"
     )
-    
+
     # Test button
     test_clicked = st.button("🔍 Test Expression", type="primary")
-    
+
     # Warning about API limit
     st.caption("⚠️ Queries returning more than 50,000 codes will error due to API limits")
-    
+
     # Get the current ECL expression value
-    test_ecl = st.session_state.get("ecl_input", st.session_state.playground_ecl).strip()
+    test_ecl = st.session_state.ecl_input.strip()
     
     # Test button clicked - run test and store results
     if test_clicked and test_ecl:
-        # Update session state with the current value to persist it
-        st.session_state.playground_ecl = test_ecl
         with st.spinner("Testing ECL expression..."):
             result_df = test_ecl_expression(test_ecl)
         

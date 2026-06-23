@@ -26,7 +26,14 @@ def render_edit():
         rerun()
     
     cluster = cluster_info.iloc[0]
-    
+
+    # Keep the ECL editor in sync with the selected cluster. A widget `value=` is
+    # ignored once its key exists in session state, so set the key explicitly when
+    # the selected cluster changes - otherwise editing B after A shows A's ECL.
+    if st.session_state.get("edit_loaded_for") != cluster_id:
+        st.session_state["edit_ecl_input"] = cluster.get("ECL_EXPRESSION", "")
+        st.session_state["edit_loaded_for"] = cluster_id
+
     # Header
     col1, col2 = st.columns([1, 6])
     with col1:
@@ -79,7 +86,6 @@ def render_edit():
         
         ecl_expression = st.text_area(
             "ECL Expression *",
-            value=cluster.get('ECL_EXPRESSION', ''),
             height=150,
             placeholder="Enter SNOMED CT ECL expression",
             help="Expression Constraint Language query to define cluster contents",
