@@ -119,6 +119,25 @@ def refresh_cluster(cluster_id, force=False):
         return f"Error: {str(e)}"
 
 
+def refresh_all_clusters(force=False):
+    """Refresh all clusters using the bulk procedure when available."""
+    actor = st.user.get("email") if hasattr(st, "user") else None
+    actor_safe = ((actor or "").upper()).replace("'", "''")
+    force_sql = "TRUE" if force else "FALSE"
+
+    try:
+        query = f"CALL {DB_SCHEMA}.REFRESH_ALL_ECL_CLUSTERS({force_sql}, '{actor_safe}')"
+        result = conn.sql(query).to_pandas()
+        return result.iloc[0, 0] if not result.empty else "No result"
+    except Exception:
+        try:
+            query = f"CALL {DB_SCHEMA}.REFRESH_ALL_ECL_CLUSTERS({force_sql})"
+            result = conn.sql(query).to_pandas()
+            return result.iloc[0, 0] if not result.empty else "No result"
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+
 def get_cluster_change_history(cluster_id, limit=50):
     """Get change history for a cluster from ECL_CLUSTER_CHANGES table"""
     try:
@@ -287,8 +306,8 @@ def update_existing_cluster(cluster_id, ecl_expression, description, cluster_typ
                 cluster_type = '{safe_type}',
                 updated_at = CURRENT_TIMESTAMP(),
                 updated_by = '{actor_safe or ""}'
-            WHEN NOT MATCHED THEN INSERT (cluster_id, ecl_expression, description, cluster_type, created_by, updated_by)
-                VALUES ('{safe_id}', '{safe_ecl}', '{safe_desc}', '{safe_type}', '{actor_safe or ""}', '{actor_safe or ""}');
+            WHEN NOT MATCHED THEN INSERT (cluster_id, ecl_expression, description, cluster_type, created_by, updated_by, created_at, updated_at)
+                VALUES ('{safe_id}', '{safe_ecl}', '{safe_desc}', '{safe_type}', '{actor_safe or ""}', '{actor_safe or ""}', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP());
             """
             conn.sql(merge_sql).collect()
             conn.sql(f"CALL {DB_SCHEMA}.FORCE_REFRESH_ECL_CLUSTER('{safe_id}', '{actor_safe}')").collect()
