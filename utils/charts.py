@@ -233,10 +233,8 @@ def create_age_slope_chart(df):
     tooltip_title = "Active Patients"
     chart_title = "Age Distribution (Active Patients)"
     
-    # Create area chart
-    area_chart = alt.Chart(age_data).mark_area(
-        opacity=0.7
-    ).encode(
+    # Create bar chart
+    area_chart = alt.Chart(age_data).mark_bar().encode(
         x=alt.X('AGE_BAND:O', 
                title='Age Group',
                sort=alt.EncodingSortField(field='AGE_SORT', order='ascending')),

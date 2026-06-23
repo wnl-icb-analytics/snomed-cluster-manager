@@ -77,6 +77,25 @@ def render_analytics():
         """All member codes for this codeset: authored cache or brought-in source."""
         return get_cluster_cache(cluster_id) if authored else get_codeset_codes(cluster_id, source)
 
+    # SQL-template building blocks: authored clusters live in ecl_cache, brought-in
+    # codesets live in combined_codesets (filtered by source).
+    if authored:
+        tmpl_code_join = f"{DB_SCHEMA}.ecl_cache ec"
+        tmpl_code_where = f"ec.cluster_id = '{cluster_id}'"
+        tmpl_codes_query = f"""-- Get all codes in cluster {cluster_id}
+SELECT code, display, system
+FROM {DB_SCHEMA}.ecl_cache
+WHERE cluster_id = '{cluster_id}'
+ORDER BY code;"""
+    else:
+        tmpl_code_join = f"{DB_SCHEMA}.combined_codesets ec"
+        tmpl_code_where = f"ec.cluster_id = '{cluster_id}' AND ec.source = '{source}'"
+        tmpl_codes_query = f"""-- Get all codes in codeset {cluster_id} ({source})
+SELECT code, code_description, source
+FROM {DB_SCHEMA}.combined_codesets
+WHERE cluster_id = '{cluster_id}' AND source = '{source}'
+ORDER BY code;"""
+
     # Authored clusters can be empty before first refresh; brought-in always have codes
     if authored and (not record_count or record_count == 0):
         st.warning("⚠️ This cluster has no cached codes. Please refresh the cluster first.")
@@ -388,14 +407,7 @@ def render_analytics():
                 
                 # Basic codes query
                 st.markdown("### Get All Codes in This Cluster")
-                query1 = f"""-- Get all SNOMED codes in cluster {cluster_id}
-SELECT 
-    code,
-    display,
-    system
-FROM {DB_SCHEMA}.ecl_cache
-WHERE cluster_id = '{cluster_id}'
-ORDER BY code;"""
+                query1 = tmpl_codes_query
                 st.code(query1, language='sql')
                 
                 # Patient list query
@@ -409,10 +421,10 @@ SELECT DISTINCT
     COUNT(DISTINCT o.id) as observation_count,
     MIN(o.clinical_effective_date) as first_observation,
     MAX(o.clinical_effective_date) as last_observation
-FROM {DB_SCHEMA}.ecl_cache ec
+FROM {tmpl_code_join}
 JOIN {DB_STORE}.observation o ON ec.code = o.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
-WHERE ec.cluster_id = '{cluster_id}'
+WHERE {tmpl_code_where}
 AND d.is_active = true
 GROUP BY d.person_id, d.practice_name, d.age, d.gender
 ORDER BY observation_count DESC;"""
@@ -429,10 +441,10 @@ SELECT
     COUNT(DISTINCT o.id) as total_observations,
     ROUND(AVG(d.age), 1) as avg_age,
     COUNT(DISTINCT CASE WHEN o.clinical_effective_date >= DATEADD('day', -30, CURRENT_DATE()) THEN d.person_id END) as recent_patients_30d
-FROM {DB_SCHEMA}.ecl_cache ec
+FROM {tmpl_code_join}
 JOIN {DB_STORE}.observation o ON ec.code = o.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
-WHERE ec.cluster_id = '{cluster_id}'
+WHERE {tmpl_code_where}
 AND d.is_active = true
 GROUP BY d.practice_name, d.pcn_name, d.borough_registered
 HAVING patient_count >= 5  -- Privacy threshold
@@ -446,10 +458,10 @@ SELECT
     DATE_TRUNC('month', o.clinical_effective_date) as month,
     COUNT(DISTINCT d.person_id) as unique_patients,
     COUNT(DISTINCT o.id) as observation_count
-FROM {DB_SCHEMA}.ecl_cache ec
+FROM {tmpl_code_join}
 JOIN {DB_STORE}.observation o ON ec.code = o.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
-WHERE ec.cluster_id = '{cluster_id}'
+WHERE {tmpl_code_where}
 AND o.clinical_effective_date >= DATEADD('month', -24, CURRENT_DATE())
 AND o.clinical_effective_date < CURRENT_DATE()
 GROUP BY DATE_TRUNC('month', o.clinical_effective_date)
@@ -464,10 +476,10 @@ SELECT
     d.gender,
     d.ethnicity_category,
     COUNT(DISTINCT d.person_id) as patient_count
-FROM {DB_SCHEMA}.ecl_cache ec
+FROM {tmpl_code_join}
 JOIN {DB_STORE}.observation o ON ec.code = o.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
-WHERE ec.cluster_id = '{cluster_id}'
+WHERE {tmpl_code_where}
 AND d.is_active = true
 GROUP BY d.age_band_5y, d.gender, d.ethnicity_category
 ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
@@ -758,14 +770,7 @@ ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                 
                 # Basic codes query
                 st.markdown("### Get All Medication Codes in This Cluster")
-                query1 = f"""-- Get all SNOMED medication codes in cluster {cluster_id}
-SELECT 
-    code,
-    display,
-    system
-FROM {DB_SCHEMA}.ecl_cache
-WHERE cluster_id = '{cluster_id}'
-ORDER BY code;"""
+                query1 = tmpl_codes_query
                 st.code(query1, language='sql')
                 
                 # Patient medication list
@@ -779,10 +784,10 @@ SELECT DISTINCT
     COUNT(DISTINCT mo.id) as order_count,
     MIN(mo.clinical_effective_date) as first_order,
     MAX(mo.clinical_effective_date) as last_order
-FROM {DB_SCHEMA}.ecl_cache ec
+FROM {tmpl_code_join}
 JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
-WHERE ec.cluster_id = '{cluster_id}'
+WHERE {tmpl_code_where}
 AND d.is_active = true
 GROUP BY d.person_id, d.practice_name, d.age, d.gender
 ORDER BY order_count DESC;"""
@@ -799,10 +804,10 @@ SELECT
     COUNT(DISTINCT mo.id) as total_orders,
     ROUND(AVG(d.age), 1) as avg_age,
     COUNT(DISTINCT CASE WHEN mo.clinical_effective_date >= DATEADD('day', -30, CURRENT_DATE()) THEN d.person_id END) as recent_patients_30d
-FROM {DB_SCHEMA}.ecl_cache ec
+FROM {tmpl_code_join}
 JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
-WHERE ec.cluster_id = '{cluster_id}'
+WHERE {tmpl_code_where}
 AND d.is_active = true
 GROUP BY d.practice_name, d.pcn_name, d.borough_registered
 HAVING patient_count >= 5  -- Privacy threshold
@@ -817,10 +822,10 @@ SELECT
     COUNT(DISTINCT d.person_id) as unique_patients,
     COUNT(DISTINCT mo.id) as order_count,
     COUNT(DISTINCT ec.code) as unique_medications
-FROM {DB_SCHEMA}.ecl_cache ec
+FROM {tmpl_code_join}
 JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
-WHERE ec.cluster_id = '{cluster_id}'
+WHERE {tmpl_code_where}
 AND mo.clinical_effective_date >= DATEADD('month', -24, CURRENT_DATE())
 AND mo.clinical_effective_date < CURRENT_DATE()
 GROUP BY DATE_TRUNC('month', mo.clinical_effective_date)
@@ -836,10 +841,10 @@ SELECT
     COUNT(DISTINCT d.person_id) as patient_count,
     COUNT(DISTINCT mo.id) as total_orders,
     ROUND(COUNT(DISTINCT mo.id) * 1.0 / COUNT(DISTINCT d.person_id), 1) as avg_orders_per_patient
-FROM {DB_SCHEMA}.ecl_cache ec
+FROM {tmpl_code_join}
 JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
-WHERE ec.cluster_id = '{cluster_id}'
+WHERE {tmpl_code_where}
 GROUP BY ec.code, ec.display
 ORDER BY patient_count DESC
 LIMIT 20;"""
