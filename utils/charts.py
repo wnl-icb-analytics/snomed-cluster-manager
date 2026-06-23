@@ -25,8 +25,10 @@ def create_population_pyramid(df):
     # Calculate max value for symmetric axis
     max_val = pyramid_data['DISPLAY_COUNT'].max()
     
-    # Extract numeric age for sorting (handles "85+" as 85)
-    pyramid_data['AGE_SORT'] = pyramid_data['AGE_BAND'].str.extract('(\d+)')[0].astype(int)
+    # Extract numeric age for sorting; drop bands without a number (e.g. 'Unknown')
+    pyramid_data['AGE_SORT'] = pyramid_data['AGE_BAND'].str.extract(r'(\d+)')[0]
+    pyramid_data = pyramid_data.dropna(subset=['AGE_SORT'])
+    pyramid_data['AGE_SORT'] = pyramid_data['AGE_SORT'].astype(int)
     
     # Set labels
     x_title = "Active Patients"
@@ -220,8 +222,10 @@ def create_age_slope_chart(df):
     # Aggregate by age band (combine both genders)
     age_data = df.groupby('AGE_BAND')['PATIENT_COUNT'].sum().reset_index()
     
-    # Extract numeric age for sorting (handles "85+" as 85)
-    age_data['AGE_SORT'] = age_data['AGE_BAND'].str.extract('(\d+)')[0].astype(int)
+    # Extract numeric age for sorting; drop bands without a number (e.g. 'Unknown')
+    age_data['AGE_SORT'] = age_data['AGE_BAND'].str.extract(r'(\d+)')[0]
+    age_data = age_data.dropna(subset=['AGE_SORT'])
+    age_data['AGE_SORT'] = age_data['AGE_SORT'].astype(int)
     age_data = age_data.sort_values('AGE_SORT')
     
     # Set labels

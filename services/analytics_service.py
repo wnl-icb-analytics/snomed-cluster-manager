@@ -21,8 +21,8 @@ def _code_source(source=None):
     """
     if source and source != 'ECL_CACHE':
         safe_src = str(source).replace("'", "''")
-        return (f"(SELECT code, cluster_id FROM {DB_SCHEMA}.COMBINED_CODESETS "
-                f"WHERE source = '{safe_src}')")
+        return (f"(SELECT code, code_description AS display, cluster_id "
+                f"FROM {DB_SCHEMA}.COMBINED_CODESETS WHERE source = '{safe_src}')")
     return f"{DB_SCHEMA}.ecl_cache"
 
 
