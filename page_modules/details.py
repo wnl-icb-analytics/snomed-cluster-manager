@@ -12,6 +12,7 @@ from components.cluster_components import render_flash_message, render_change_hi
 from components.chart_components import create_practice_scatter, create_org_bar_chart
 from utils.helpers import format_time_ago, format_ecl_for_display
 from utils.charts import create_population_pyramid
+from services.codeset_service import is_authored, get_codeset_meta, get_codeset_codes, source_label
 from config import CLUSTER_TYPE_DISPLAY, DB_SCHEMA
 
 
@@ -23,7 +24,13 @@ def render_details():
         rerun()
     
     cluster_id = st.session_state.selected_cluster
-    
+    source = st.session_state.get('selected_source')
+
+    # Brought-in codesets are read-only and rendered separately
+    if not is_authored(source):
+        render_external_details(cluster_id, source)
+        return
+
     # Get cluster info
     clusters_df = get_all_clusters()
     cluster_info = clusters_df[clusters_df['CLUSTER_ID'] == cluster_id]
@@ -189,3 +196,75 @@ ORDER BY code;"""
     
     # Change history
     render_change_history(cluster_id, cluster)
+
+
+def render_external_details(cluster_id, source):
+    """Details page for a brought-in (read-only) codeset from COMBINED_CODESETS."""
+    meta = get_codeset_meta(cluster_id, source)
+    if meta.empty:
+        st.error(f"Codeset '{cluster_id}' not found in {source_label(source)}")
+        st.session_state.page = 'home'
+        rerun()
+
+    info = meta.iloc[0]
+
+    # Header
+    col1, col2, col3 = st.columns([1, 6, 2])
+    with col1:
+        if st.button("← Back", use_container_width=True):
+            st.session_state.page = 'home'
+            rerun()
+    with col3:
+        if st.button("📈 Analytics", use_container_width=True, type="primary"):
+            st.session_state.page = 'analytics'
+            rerun()
+
+    st.title(f"📋 {cluster_id}")
+    st.markdown(f"📥 **{source_label(source)}** (brought-in, read-only)")
+    if info.get('DESCRIPTION'):
+        st.markdown(f"*{info.get('DESCRIPTION')}*")
+
+    # Analysis mode - brought-in codesets have no stored type, so the user picks
+    modes = ['OBSERVATION', 'MEDICATION']
+    current = st.session_state.get('codeset_mode', 'OBSERVATION')
+    mode = st.radio(
+        "Analysis mode", options=modes,
+        index=modes.index(current) if current in modes else 0,
+        horizontal=True,
+        help="Brought-in codesets can mix clinical and medication codes - choose how to analyse them",
+        format_func=lambda m: "🩺 Observation" if m == 'OBSERVATION' else "💊 Medication"
+    )
+    st.session_state['codeset_mode'] = mode
+
+    # Member codes
+    code_count = int(info.get('CODE_COUNT') or 0)
+    st.metric("Member codes", f"{code_count:,}")
+
+    codes_df = get_codeset_codes(cluster_id, source)
+    if codes_df.empty:
+        st.info("No member codes found for this codeset.")
+        return
+
+    code_search = st.text_input("🔍 Search codes", placeholder="Search by code or description...")
+    filtered = codes_df
+    if code_search:
+        mask = (codes_df['CODE'].astype(str).str.contains(code_search, case=False, na=False) |
+                codes_df['DISPLAY'].astype(str).str.contains(code_search, case=False, na=False))
+        filtered = codes_df[mask]
+
+    if filtered.empty:
+        st.info(f"No codes match '{code_search}'")
+    else:
+        st.dataframe(filtered, use_container_width=True)
+        if len(filtered) < len(codes_df):
+            st.caption(f"Showing {len(filtered)} of {len(codes_df)} codes")
+
+    # SQL template
+    st.subheader("💻 SQL Query")
+    sql_query = f"""-- Get all codes in codeset {cluster_id} ({source_label(source)})
+SELECT code, code_description, source
+FROM {DB_SCHEMA}.combined_codesets
+WHERE cluster_id = '{cluster_id}'
+  AND source = '{source}'
+ORDER BY code;"""
+    st.code(sql_query, language='sql')

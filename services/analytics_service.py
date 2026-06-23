@@ -12,9 +12,24 @@ from config import DB_SCHEMA, DB_ANALYTICS, DB_STORE, DB_DEMOGRAPHICS
 conn = get_connection()
 
 
-def get_observation_analytics(cluster_id):
+def _code_source(source=None):
+    """Code-membership source for a codeset.
+
+    Authored clusters read live ecl_cache; brought-in codesets read
+    COMBINED_CODESETS filtered by source. The returned subquery exposes
+    (code, cluster_id) so existing `ec.cluster_id = '...'` filters work for both.
+    """
+    if source and source != 'ECL_CACHE':
+        safe_src = str(source).replace("'", "''")
+        return (f"(SELECT code, cluster_id FROM {DB_SCHEMA}.COMBINED_CODESETS "
+                f"WHERE source = '{safe_src}')")
+    return f"{DB_SCHEMA}.ecl_cache"
+
+
+def get_observation_analytics(cluster_id, source=None):
     """Get observation analytics for cluster codes"""
     try:
+        code_src = _code_source(source)
         query = f"""
         SELECT 
             ec.code,
@@ -22,7 +37,7 @@ def get_observation_analytics(cluster_id):
             COUNT(DISTINCT d.person_id) as person_count,
             COUNT(DISTINCT o.id) as observation_count
         FROM {DB_STORE}.observation o
-        JOIN {DB_SCHEMA}.ecl_cache ec ON o.mapped_concept_code = ec.code
+        JOIN {code_src} ec ON o.mapped_concept_code = ec.code
         JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
         WHERE ec.cluster_id = '{cluster_id}'
         GROUP BY ec.code, ec.display
@@ -34,9 +49,10 @@ def get_observation_analytics(cluster_id):
         return pd.DataFrame()
 
 
-def get_medication_analytics(cluster_id):
+def get_medication_analytics(cluster_id, source=None):
     """Get medication analytics for cluster codes"""
     try:
+        code_src = _code_source(source)
         query = f"""
         SELECT 
             ec.code,
@@ -44,7 +60,7 @@ def get_medication_analytics(cluster_id):
             COUNT(DISTINCT d.person_id) as person_count,
             COUNT(DISTINCT mo.id) as order_count
         FROM {DB_STORE}.medication_order mo
-        JOIN {DB_SCHEMA}.ecl_cache ec ON mo.mapped_concept_code = ec.code
+        JOIN {code_src} ec ON mo.mapped_concept_code = ec.code
         JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
         WHERE ec.cluster_id = '{cluster_id}'
         GROUP BY ec.code, ec.display
@@ -56,16 +72,17 @@ def get_medication_analytics(cluster_id):
         return pd.DataFrame()
 
 
-def get_distinct_persons_med(cluster_id):
+def get_distinct_persons_med(cluster_id, source=None):
     """Get distinct person counts for medications"""
     try:
+        code_src = _code_source(source)
         query = f"""
         SELECT 
             COUNT(DISTINCT d.person_id) as total_persons,
             COUNT(DISTINCT CASE WHEN d.is_active THEN d.person_id END) as active_persons,
             COUNT(DISTINCT mo.id) as total_orders
         FROM {DB_STORE}.medication_order mo
-        JOIN {DB_SCHEMA}.ecl_cache ec ON mo.mapped_concept_code = ec.code
+        JOIN {code_src} ec ON mo.mapped_concept_code = ec.code
         JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
         WHERE ec.cluster_id = '{cluster_id}'
         """
@@ -80,15 +97,16 @@ def get_distinct_persons_med(cluster_id):
         return 0, 0, 0
 
 
-def get_medication_time_series(cluster_id):
+def get_medication_time_series(cluster_id, source=None):
     """Get medication time series data"""
     try:
+        code_src = _code_source(source)
         query = f"""
         SELECT 
             DATE_TRUNC('month', mo.clinical_effective_date) as month_year,
             COUNT(DISTINCT mo.id) as order_count
         FROM {DB_STORE}.medication_order mo
-        JOIN {DB_SCHEMA}.ecl_cache ec ON mo.mapped_concept_code = ec.code
+        JOIN {code_src} ec ON mo.mapped_concept_code = ec.code
         JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
         WHERE ec.cluster_id = '{cluster_id}'
         AND mo.clinical_effective_date >= DATE_TRUNC('month', DATEADD(month, -60, CURRENT_DATE()))
@@ -103,16 +121,17 @@ def get_medication_time_series(cluster_id):
         return pd.DataFrame()
 
 
-def get_distinct_persons_obs(cluster_id):
+def get_distinct_persons_obs(cluster_id, source=None):
     """Get distinct person counts for observations"""
     try:
+        code_src = _code_source(source)
         query = f"""
         SELECT 
             COUNT(DISTINCT d.person_id) as total_persons,
             COUNT(DISTINCT CASE WHEN d.is_active THEN d.person_id END) as active_persons,
             COUNT(DISTINCT o.id) as total_observations
         FROM {DB_STORE}.observation o
-        JOIN {DB_SCHEMA}.ecl_cache ec ON o.mapped_concept_code = ec.code
+        JOIN {code_src} ec ON o.mapped_concept_code = ec.code
         JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
         WHERE ec.cluster_id = '{cluster_id}'
         """
@@ -127,15 +146,16 @@ def get_distinct_persons_obs(cluster_id):
         return 0, 0, 0
 
 
-def get_observation_time_series(cluster_id):
+def get_observation_time_series(cluster_id, source=None):
     """Get observation time series data"""
     try:
+        code_src = _code_source(source)
         query = f"""
         SELECT 
             DATE_TRUNC('month', o.clinical_effective_date) as month_year,
             COUNT(DISTINCT o.id) as observation_count
         FROM {DB_STORE}.observation o
-        JOIN {DB_SCHEMA}.ecl_cache ec ON o.mapped_concept_code = ec.code
+        JOIN {code_src} ec ON o.mapped_concept_code = ec.code
         JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
         WHERE ec.cluster_id = '{cluster_id}'
         AND o.clinical_effective_date >= DATE_TRUNC('month', DATEADD(month, -60, CURRENT_DATE()))
@@ -150,15 +170,16 @@ def get_observation_time_series(cluster_id):
         return pd.DataFrame()
 
 
-def get_medication_time_series(cluster_id):
+def get_medication_time_series(cluster_id, source=None):
     """Get medication time series data"""
     try:
+        code_src = _code_source(source)
         query = f"""
         SELECT 
             DATE_TRUNC('month', mo.clinical_effective_date) as month_year,
             COUNT(DISTINCT mo.id) as order_count
         FROM {DB_STORE}.medication_order mo
-        JOIN {DB_SCHEMA}.ecl_cache ec ON mo.mapped_concept_code = ec.code
+        JOIN {code_src} ec ON mo.mapped_concept_code = ec.code
         JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
         WHERE ec.cluster_id = '{cluster_id}'
         AND mo.clinical_effective_date >= DATE_TRUNC('month', DATEADD(month, -60, CURRENT_DATE()))
@@ -173,9 +194,10 @@ def get_medication_time_series(cluster_id):
         return pd.DataFrame()
 
 
-def get_cluster_demographics(cluster_id, cluster_type):
+def get_cluster_demographics(cluster_id, cluster_type, source=None):
     """Get demographic summary for patients with codes in a specific cluster"""
     try:
+        code_src = _code_source(source)
         
         # Choose the right table based on cluster type
         if cluster_type == 'OBSERVATION':
@@ -186,7 +208,7 @@ def get_cluster_demographics(cluster_id, cluster_type):
                 COUNT(DISTINCT CASE WHEN d.is_active = true AND d.gender = 'Male' THEN d.person_id END) as male_count,
                 COUNT(DISTINCT CASE WHEN d.is_active = true AND d.gender = 'Female' THEN d.person_id END) as female_count
             FROM {DB_STORE}.observation o
-            JOIN {DB_SCHEMA}.ecl_cache ec ON o.mapped_concept_code = ec.code
+            JOIN {code_src} ec ON o.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
@@ -199,7 +221,7 @@ def get_cluster_demographics(cluster_id, cluster_type):
                 COUNT(DISTINCT CASE WHEN d.is_active = true AND d.gender = 'Male' THEN d.person_id END) as male_count,
                 COUNT(DISTINCT CASE WHEN d.is_active = true AND d.gender = 'Female' THEN d.person_id END) as female_count
             FROM {DB_STORE}.medication_order m
-            JOIN {DB_SCHEMA}.ecl_cache ec ON m.mapped_concept_code = ec.code
+            JOIN {code_src} ec ON m.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON m.person_id = d.person_id
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
@@ -211,9 +233,10 @@ def get_cluster_demographics(cluster_id, cluster_type):
         return pd.DataFrame()
 
 
-def get_cluster_age_sex_distribution(cluster_id, cluster_type):
+def get_cluster_age_sex_distribution(cluster_id, cluster_type, source=None):
     """Get age/sex distribution for patients with codes in a specific cluster"""
     try:
+        code_src = _code_source(source)
         # Choose the right table based on cluster type
         if cluster_type == 'OBSERVATION':
             query = f"""
@@ -222,7 +245,7 @@ def get_cluster_age_sex_distribution(cluster_id, cluster_type):
                 d.gender AS SEX,
                 COUNT(DISTINCT d.person_id) AS PATIENT_COUNT
             FROM {DB_STORE}.observation o
-            JOIN {DB_SCHEMA}.ecl_cache ec ON o.mapped_concept_code = ec.code
+            JOIN {code_src} ec ON o.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
@@ -237,7 +260,7 @@ def get_cluster_age_sex_distribution(cluster_id, cluster_type):
                 d.gender AS SEX,
                 COUNT(DISTINCT d.person_id) AS PATIENT_COUNT
             FROM {DB_STORE}.medication_order m
-            JOIN {DB_SCHEMA}.ecl_cache ec ON m.mapped_concept_code = ec.code
+            JOIN {code_src} ec ON m.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON m.person_id = d.person_id
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
@@ -252,9 +275,10 @@ def get_cluster_age_sex_distribution(cluster_id, cluster_type):
         return pd.DataFrame()
 
 
-def get_cluster_care_team_analysis(cluster_id, cluster_type):
+def get_cluster_care_team_analysis(cluster_id, cluster_type, source=None):
     """Get care team analysis for patients with codes in a specific cluster"""
     try:
+        code_src = _code_source(source)
         
         # Choose the right table based on cluster type
         if cluster_type == 'OBSERVATION':
@@ -269,7 +293,7 @@ def get_cluster_care_team_analysis(cluster_id, cluster_type):
                 COUNT(DISTINCT CASE WHEN d.age < 15 THEN d.person_id END) as children_count,
                 COUNT(DISTINCT CASE WHEN d.age >= 65 THEN d.person_id END) as elderly_count
             FROM {DB_STORE}.observation o
-            JOIN {DB_SCHEMA}.ecl_cache ec ON o.mapped_concept_code = ec.code
+            JOIN {code_src} ec ON o.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
@@ -289,7 +313,7 @@ def get_cluster_care_team_analysis(cluster_id, cluster_type):
                 COUNT(DISTINCT CASE WHEN d.age < 15 THEN d.person_id END) as children_count,
                 COUNT(DISTINCT CASE WHEN d.age >= 65 THEN d.person_id END) as elderly_count
             FROM {DB_STORE}.medication_order m
-            JOIN {DB_SCHEMA}.ecl_cache ec ON m.mapped_concept_code = ec.code
+            JOIN {code_src} ec ON m.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON m.person_id = d.person_id
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
@@ -304,9 +328,10 @@ def get_cluster_care_team_analysis(cluster_id, cluster_type):
         return pd.DataFrame()
 
 
-def get_cluster_standardized_rates(cluster_id, cluster_type, agg_level="Borough"):
+def get_cluster_standardized_rates(cluster_id, cluster_type, agg_level="Borough", source=None):
     """Get simple rates table by organisational level"""
     try:
+        code_src = _code_source(source)
         # Choose aggregation column
         if agg_level == "Practice":
             group_col = "PRACTICE_NAME"
@@ -334,7 +359,7 @@ def get_cluster_standardized_rates(cluster_id, cluster_type, agg_level="Borough"
                     d.age,
                     MIN(o.{date_col}) AS first_code_date,
                     MAX(o.{date_col}) AS last_code_date
-                FROM {DB_SCHEMA}.ecl_cache ec
+                FROM {code_src} ec
                 JOIN {DB_STORE}.observation o ON ec.code = o.mapped_concept_code
                 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
                 WHERE ec.cluster_id = '{cluster_id}'
@@ -384,7 +409,7 @@ def get_cluster_standardized_rates(cluster_id, cluster_type, agg_level="Borough"
                     d.age,
                     MIN(mo.{date_col}) AS first_code_date,
                     MAX(mo.{date_col}) AS last_code_date
-                FROM {DB_SCHEMA}.ecl_cache ec
+                FROM {code_src} ec
                 JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
                 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
                 WHERE ec.cluster_id = '{cluster_id}'
@@ -429,9 +454,10 @@ def get_cluster_standardized_rates(cluster_id, cluster_type, agg_level="Borough"
         return pd.DataFrame()
 
 
-def get_cluster_ethnicity_analysis(cluster_id, cluster_type):
+def get_cluster_ethnicity_analysis(cluster_id, cluster_type, source=None):
     """Get ethnicity breakdown for patients with codes in cluster"""
     try:
+        code_src = _code_source(source)
         # Choose table based on cluster type
         if cluster_type == 'OBSERVATION':
             query = f"""
@@ -445,7 +471,7 @@ def get_cluster_ethnicity_analysis(cluster_id, cluster_type):
                 d.ethnicity_subcategory AS ETHNICITY,
                 COUNT(DISTINCT d.person_id) AS PATIENT_COUNT,
                 COUNT(DISTINCT d.person_id) * 1000.0 / tp.total_count AS RATE_PER_1000
-            FROM {DB_SCHEMA}.ecl_cache ec
+            FROM {code_src} ec
             JOIN {DB_STORE}.observation o ON ec.code = o.mapped_concept_code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
             CROSS JOIN total_pop tp
@@ -467,7 +493,7 @@ def get_cluster_ethnicity_analysis(cluster_id, cluster_type):
                 d.ethnicity_subcategory AS ETHNICITY,
                 COUNT(DISTINCT d.person_id) AS PATIENT_COUNT,
                 COUNT(DISTINCT d.person_id) * 1000.0 / tp.total_count AS RATE_PER_1000
-            FROM {DB_SCHEMA}.ecl_cache ec
+            FROM {code_src} ec
             JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
             CROSS JOIN total_pop tp
@@ -484,9 +510,10 @@ def get_cluster_ethnicity_analysis(cluster_id, cluster_type):
         return pd.DataFrame()
 
 
-def get_cluster_deprivation_analysis(cluster_id, cluster_type):
+def get_cluster_deprivation_analysis(cluster_id, cluster_type, source=None):
     """Get deprivation (IMD) breakdown for patients with codes in cluster"""
     try:
+        code_src = _code_source(source)
         # Choose table based on cluster type
         if cluster_type == 'OBSERVATION':
             query = f"""
@@ -501,7 +528,7 @@ def get_cluster_deprivation_analysis(cluster_id, cluster_type):
                 d.imd_quintile_19 AS IMD_QUINTILE,
                 COUNT(DISTINCT d.person_id) AS PATIENT_COUNT,
                 COUNT(DISTINCT d.person_id) * 1000.0 / tp.total_count AS RATE_PER_1000
-            FROM {DB_SCHEMA}.ecl_cache ec
+            FROM {code_src} ec
             JOIN {DB_STORE}.observation o ON ec.code = o.mapped_concept_code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
             CROSS JOIN total_pop tp
@@ -524,7 +551,7 @@ def get_cluster_deprivation_analysis(cluster_id, cluster_type):
                 d.imd_quintile_19 AS IMD_QUINTILE,
                 COUNT(DISTINCT d.person_id) AS PATIENT_COUNT,
                 COUNT(DISTINCT d.person_id) * 1000.0 / tp.total_count AS RATE_PER_1000
-            FROM {DB_SCHEMA}.ecl_cache ec
+            FROM {code_src} ec
             JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
             CROSS JOIN total_pop tp
@@ -541,9 +568,10 @@ def get_cluster_deprivation_analysis(cluster_id, cluster_type):
         return pd.DataFrame()
 
 
-def get_cluster_language_analysis(cluster_id, cluster_type):
+def get_cluster_language_analysis(cluster_id, cluster_type, source=None):
     """Get language breakdown for patients with codes in cluster"""
     try:
+        code_src = _code_source(source)
         # Choose table based on cluster type
         if cluster_type == 'OBSERVATION':
             query = f"""
@@ -553,7 +581,7 @@ def get_cluster_language_analysis(cluster_id, cluster_type):
                 d.interpreter_needed AS INTERPRETER_NEEDED,
                 COUNT(DISTINCT d.person_id) AS PATIENT_COUNT
             FROM {DB_STORE}.observation o
-            JOIN {DB_SCHEMA}.ecl_cache ec ON o.mapped_concept_code = ec.code
+            JOIN {code_src} ec ON o.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
@@ -569,7 +597,7 @@ def get_cluster_language_analysis(cluster_id, cluster_type):
                 d.interpreter_needed AS INTERPRETER_NEEDED,
                 COUNT(DISTINCT d.person_id) AS PATIENT_COUNT
             FROM {DB_STORE}.medication_order mo
-            JOIN {DB_SCHEMA}.ecl_cache ec ON mo.mapped_concept_code = ec.code
+            JOIN {code_src} ec ON mo.mapped_concept_code = ec.code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
             WHERE ec.cluster_id = '{cluster_id}'
             AND d.is_active = true
@@ -584,9 +612,10 @@ def get_cluster_language_analysis(cluster_id, cluster_type):
         return pd.DataFrame()
 
 
-def get_cluster_neighbourhood_analysis(cluster_id, cluster_type):
+def get_cluster_neighbourhood_analysis(cluster_id, cluster_type, source=None):
     """Get neighbourhood breakdown for patients with codes in cluster"""
     try:
+        code_src = _code_source(source)
         # Choose table based on cluster type
         if cluster_type == 'OBSERVATION':
             query = f"""
@@ -602,7 +631,7 @@ def get_cluster_neighbourhood_analysis(cluster_id, cluster_type):
                 AVG(d.age) AS AVG_AGE,
                 AVG(d.imd_decile_19) AS AVG_IMD_DECILE,
                 COUNT(DISTINCT d.person_id) * 1000.0 / tp.total_count AS RATE_PER_1000
-            FROM {DB_SCHEMA}.ecl_cache ec
+            FROM {code_src} ec
             JOIN {DB_STORE}.observation o ON ec.code = o.mapped_concept_code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON o.person_id = d.person_id
             CROSS JOIN total_pop tp
@@ -626,7 +655,7 @@ def get_cluster_neighbourhood_analysis(cluster_id, cluster_type):
                 AVG(d.age) AS AVG_AGE,
                 AVG(d.imd_decile_19) AS AVG_IMD_DECILE,
                 COUNT(DISTINCT d.person_id) * 1000.0 / tp.total_count AS RATE_PER_1000
-            FROM {DB_SCHEMA}.ecl_cache ec
+            FROM {code_src} ec
             JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
             JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
             CROSS JOIN total_pop tp

@@ -19,6 +19,7 @@ from utils.charts import (
     create_population_pyramid, create_age_slope_chart, create_ethnicity_bar_chart,
     create_deprivation_bar_chart, create_language_bar_chart, create_neighbourhood_bar_chart
 )
+from services.codeset_service import is_authored, get_codeset_meta, get_codeset_codes, source_label
 from config import DB_ANALYTICS, DB_SCHEMA, DB_STORE, DB_DEMOGRAPHICS
 
 
@@ -30,7 +31,9 @@ def render_analytics():
         rerun()
     
     cluster_id = st.session_state.selected_cluster
-    
+    source = st.session_state.get('selected_source')
+    authored = is_authored(source)
+
     # Header with back button
     col1, col2 = st.columns([1, 6])
     with col1:
@@ -40,19 +43,42 @@ def render_analytics():
     
     st.title(f"📈 Analytics: {cluster_id}")
     
-    # Get cluster information
-    clusters_df = get_all_clusters()
-    cluster_info = clusters_df[clusters_df['CLUSTER_ID'] == cluster_id]
-    if cluster_info.empty:
-        st.error(f"Cluster '{cluster_id}' not found")
-        st.session_state.page = 'home'
-        rerun()
-        
-    cluster = cluster_info.iloc[0]
-    cluster_type = cluster.get('CLUSTER_TYPE', 'OBSERVATION')
-    
-    # Check if cluster has cached data
-    if not cluster.get('RECORD_COUNT') or cluster.get('RECORD_COUNT') == 0:
+    # Resolve cluster type and code count for authored clusters or brought-in codesets
+    if authored:
+        clusters_df = get_all_clusters()
+        cluster_info = clusters_df[clusters_df['CLUSTER_ID'] == cluster_id]
+        if cluster_info.empty:
+            st.error(f"Cluster '{cluster_id}' not found")
+            st.session_state.page = 'home'
+            rerun()
+        cluster = cluster_info.iloc[0]
+        cluster_type = cluster.get('CLUSTER_TYPE', 'OBSERVATION')
+        record_count = cluster.get('RECORD_COUNT')
+    else:
+        meta = get_codeset_meta(cluster_id, source)
+        if meta.empty:
+            st.error(f"Codeset '{cluster_id}' not found")
+            st.session_state.page = 'home'
+            rerun()
+        st.caption(f"📥 {source_label(source)} (brought-in)")
+        # Brought-in codesets have no stored type - let the user choose the mode
+        modes = ['OBSERVATION', 'MEDICATION']
+        current = st.session_state.get('codeset_mode', 'OBSERVATION')
+        cluster_type = st.radio(
+            "Analysis mode", options=modes,
+            index=modes.index(current) if current in modes else 0,
+            horizontal=True,
+            format_func=lambda m: "🩺 Observation" if m == 'OBSERVATION' else "💊 Medication"
+        )
+        st.session_state['codeset_mode'] = cluster_type
+        record_count = int(meta.iloc[0]['CODE_COUNT'] or 0)
+
+    def cluster_member_codes():
+        """All member codes for this codeset: authored cache or brought-in source."""
+        return get_cluster_cache(cluster_id) if authored else get_codeset_codes(cluster_id, source)
+
+    # Authored clusters can be empty before first refresh; brought-in always have codes
+    if authored and (not record_count or record_count == 0):
         st.warning("⚠️ This cluster has no cached codes. Please refresh the cluster first.")
         if st.button("🔄 Refresh Cluster Now"):
             result = refresh_cluster(cluster_id, force=True)
@@ -81,11 +107,11 @@ def render_analytics():
                 st.markdown("Summary statistics for all observations in this cluster")
                 
                 with st.spinner("Loading observation data..."):
-                    obs_df = get_observation_analytics(cluster_id)
-                    total_persons, active_persons, total_observations = get_distinct_persons_obs(cluster_id)
+                    obs_df = get_observation_analytics(cluster_id, source=source)
+                    total_persons, active_persons, total_observations = get_distinct_persons_obs(cluster_id, source=source)
                 if not obs_df.empty:
                     # Get total cluster codes for comparison
-                    cluster_codes = get_cluster_cache(cluster_id)
+                    cluster_codes = cluster_member_codes()
                     total_codes_in_cluster = len(cluster_codes) if not cluster_codes.empty else 0
                     unused_codes = total_codes_in_cluster - len(obs_df)
                     
@@ -110,7 +136,7 @@ def render_analytics():
                     
                     # Usage over time chart integrated into overview  
                     st.subheader("📈 Usage Over Time (Last 5 Years)")
-                    time_df = get_observation_time_series(cluster_id)
+                    time_df = get_observation_time_series(cluster_id, source=source)
                     
                     if not time_df.empty:
                         st.markdown("**Observations per Month:**")
@@ -129,10 +155,10 @@ def render_analytics():
                 st.markdown("Ranking of codes by usage frequency and patient reach")
                 
                 with st.spinner("Loading code usage data..."):
-                    obs_df = get_observation_analytics(cluster_id)
+                    obs_df = get_observation_analytics(cluster_id, source=source)
                 
                 # Get cluster codes for analysis
-                cluster_codes = get_cluster_cache(cluster_id)
+                cluster_codes = cluster_member_codes()
                 total_codes_in_cluster = len(cluster_codes) if not cluster_codes.empty else 0
                 used_codes = len(obs_df) if not obs_df.empty else 0
                 unused_codes = total_codes_in_cluster - used_codes
@@ -180,7 +206,7 @@ def render_analytics():
                 st.markdown("Age and sex breakdown of patients with observations in this cluster")
                 
                 with st.spinner("Loading demographics data..."):
-                    cluster_demographics = get_cluster_demographics(cluster_id, cluster_type)
+                    cluster_demographics = get_cluster_demographics(cluster_id, cluster_type, source=source)
                     
                     if not cluster_demographics.empty:
                         summary = cluster_demographics.iloc[0]
@@ -199,7 +225,7 @@ def render_analytics():
                             st.metric("Female %", f"{female_pct:.1f}%")
                         
                         # Population pyramid and age distribution charts
-                        age_sex_dist = get_cluster_age_sex_distribution(cluster_id, cluster_type)
+                        age_sex_dist = get_cluster_age_sex_distribution(cluster_id, cluster_type, source=source)
                         if not age_sex_dist.empty:
                             create_population_pyramid(age_sex_dist)
                             create_age_slope_chart(age_sex_dist)
@@ -217,7 +243,7 @@ def render_analytics():
                 
                 with st.spinner("Loading organisation data..."):
                     # Load practice-level data (always needed for scatter plot)
-                    practice_rates = get_cluster_standardized_rates(cluster_id, cluster_type, "Practice")
+                    practice_rates = get_cluster_standardized_rates(cluster_id, cluster_type, "Practice", source=source)
                     
                     if not practice_rates.empty:
                         # Summary metrics
@@ -258,7 +284,7 @@ def render_analytics():
                             )
                         
                         # Load and display aggregated data
-                        agg_rates = get_cluster_standardized_rates(cluster_id, cluster_type, agg_level)
+                        agg_rates = get_cluster_standardized_rates(cluster_id, cluster_type, agg_level, source=source)
                         if not agg_rates.empty:
                             bar_chart = create_org_bar_chart(agg_rates, agg_level)
                             if bar_chart:
@@ -315,10 +341,10 @@ def render_analytics():
                 
                 with st.spinner("Loading health equity data..."):
                     # Load all equity data
-                    ethnicity_data = get_cluster_ethnicity_analysis(cluster_id, cluster_type)
-                    deprivation_data = get_cluster_deprivation_analysis(cluster_id, cluster_type)
-                    language_data = get_cluster_language_analysis(cluster_id, cluster_type)
-                    neighbourhood_data = get_cluster_neighbourhood_analysis(cluster_id, cluster_type)
+                    ethnicity_data = get_cluster_ethnicity_analysis(cluster_id, cluster_type, source=source)
+                    deprivation_data = get_cluster_deprivation_analysis(cluster_id, cluster_type, source=source)
+                    language_data = get_cluster_language_analysis(cluster_id, cluster_type, source=source)
+                    neighbourhood_data = get_cluster_neighbourhood_analysis(cluster_id, cluster_type, source=source)
                     
                     # Ethnicity Analysis
                     st.subheader("📊 Ethnicity")
@@ -449,14 +475,14 @@ ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                 
         elif cluster_type == 'MEDICATION':
             with st.spinner("Loading medication data..."):
-                med_df = get_medication_analytics(cluster_id)
+                med_df = get_medication_analytics(cluster_id, source=source)
             
             # Tab 1: Overview
             with tabs[0]:
                 st.subheader("💊 Usage Summary")
                 if not med_df.empty:
                     # Get total cluster codes for comparison
-                    cluster_codes = get_cluster_cache(cluster_id)
+                    cluster_codes = cluster_member_codes()
                     total_codes_in_cluster = len(cluster_codes) if not cluster_codes.empty else 0
                     unused_codes = total_codes_in_cluster - len(med_df)
                     
@@ -464,7 +490,7 @@ ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         # Get distinct person count across all codes in cluster
-                        total_persons, active_persons, total_orders = get_distinct_persons_med(cluster_id)
+                        total_persons, active_persons, total_orders = get_distinct_persons_med(cluster_id, source=source)
                         st.metric(
                             f"Persons Ever Ordered (Active / Total)",
                             f"{active_persons:,} / {total_persons:,}"
@@ -484,7 +510,7 @@ ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                     
                     # Usage over time chart integrated into overview
                     st.subheader("📈 Usage Over Time (Last 5 Years)")
-                    time_df = get_medication_time_series(cluster_id)
+                    time_df = get_medication_time_series(cluster_id, source=source)
                     
                     if not time_df.empty:
                         st.markdown("**Orders per Month:**")
@@ -501,7 +527,7 @@ ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                 st.subheader("📋 Code Usage Analysis")
                 
                 # Always get cluster codes for analysis
-                cluster_codes = get_cluster_cache(cluster_id)
+                cluster_codes = cluster_member_codes()
                 total_codes_in_cluster = len(cluster_codes) if not cluster_codes.empty else 0
                 used_codes = len(med_df) if not med_df.empty else 0
                 unused_codes = total_codes_in_cluster - used_codes
@@ -550,7 +576,7 @@ ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                 st.markdown("Age and sex breakdown of patients with medication orders in this cluster")
                 
                 with st.spinner("Loading demographics data..."):
-                    cluster_demographics = get_cluster_demographics(cluster_id, cluster_type)
+                    cluster_demographics = get_cluster_demographics(cluster_id, cluster_type, source=source)
                     
                     if not cluster_demographics.empty:
                         summary = cluster_demographics.iloc[0]
@@ -569,7 +595,7 @@ ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                             st.metric("Female %", f"{female_pct:.1f}%")
                         
                         # Population pyramid and age distribution charts
-                        age_sex_dist = get_cluster_age_sex_distribution(cluster_id, cluster_type)
+                        age_sex_dist = get_cluster_age_sex_distribution(cluster_id, cluster_type, source=source)
                         if not age_sex_dist.empty:
                             create_population_pyramid(age_sex_dist)
                             create_age_slope_chart(age_sex_dist)
@@ -587,7 +613,7 @@ ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                 
                 with st.spinner("Loading organisation data..."):
                     # Load practice-level data (always needed for scatter plot)
-                    practice_rates = get_cluster_standardized_rates(cluster_id, cluster_type, "Practice")
+                    practice_rates = get_cluster_standardized_rates(cluster_id, cluster_type, "Practice", source=source)
                     
                     if not practice_rates.empty:
                         # Summary metrics
@@ -628,7 +654,7 @@ ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                             )
                         
                         # Load and display aggregated data
-                        agg_rates = get_cluster_standardized_rates(cluster_id, cluster_type, agg_level)
+                        agg_rates = get_cluster_standardized_rates(cluster_id, cluster_type, agg_level, source=source)
                         if not agg_rates.empty:
                             bar_chart = create_org_bar_chart(agg_rates, agg_level)
                             if bar_chart:
@@ -685,10 +711,10 @@ ORDER BY d.age_band_5y, d.gender, d.ethnicity_category;"""
                 
                 with st.spinner("Loading health equity data..."):
                     # Load all equity data
-                    ethnicity_data = get_cluster_ethnicity_analysis(cluster_id, cluster_type)
-                    deprivation_data = get_cluster_deprivation_analysis(cluster_id, cluster_type)
-                    language_data = get_cluster_language_analysis(cluster_id, cluster_type)
-                    neighbourhood_data = get_cluster_neighbourhood_analysis(cluster_id, cluster_type)
+                    ethnicity_data = get_cluster_ethnicity_analysis(cluster_id, cluster_type, source=source)
+                    deprivation_data = get_cluster_deprivation_analysis(cluster_id, cluster_type, source=source)
+                    language_data = get_cluster_language_analysis(cluster_id, cluster_type, source=source)
+                    neighbourhood_data = get_cluster_neighbourhood_analysis(cluster_id, cluster_type, source=source)
                     
                     # Ethnicity Analysis
                     st.subheader("📊 Ethnicity")

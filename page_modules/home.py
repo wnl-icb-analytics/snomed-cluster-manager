@@ -1,118 +1,132 @@
 # =============================================================================
 # SNOMED Cluster Manager - Home Page
+# Single search across all codesets: authored here + brought in
 # =============================================================================
 
 import streamlit as st
 import pandas as pd
 from database import rerun
-from services.cluster_service import get_all_clusters
 from components.cluster_components import render_flash_message
-from utils.helpers import get_status_emoji, format_time_ago
-from config import CLUSTER_TYPE_DISPLAY, STALE_LABEL
+from services.codeset_service import get_codeset_index, source_label
+from config import CLUSTER_TYPE_DISPLAY
+
+RENDER_CAP = 100  # max rows rendered at once; users refine with search
+
+
+def _open_codeset(source, cluster_id, page):
+    """Select a codeset and navigate to one of its pages."""
+    st.session_state.selected_cluster = cluster_id
+    st.session_state.selected_source = source
+    st.session_state.pop('codeset_mode', None)  # reset analysis mode per codeset
+    st.session_state.page = page
+    rerun()
 
 
 def render_home():
-    """Render the Home page with cluster list and search"""
-    
-    # Load cluster data with error handling
-    try:
-        clusters_df = get_all_clusters()
-    except Exception as e:
-        st.error(f"⚠️ Database connection error: {str(e)}")
-        st.info("Please refresh the page or contact support if this persists.")
-        clusters_df = pd.DataFrame()
-
-    # Flash message component
+    """Home page: search across authored and brought-in codesets."""
     render_flash_message()
 
-    if clusters_df.empty:
-        st.info("🌟 **Welcome to SNOMED Cluster Manager!** No ECL clusters found yet.")
-        st.markdown("Get started by creating your first cluster with the **✨ Add New** button above.")
-    else:
-        # KPI indicators
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            total_clusters = len(clusters_df)
-            st.metric("Total Clusters", total_clusters)
-        with col2:
-            fresh_count = len(clusters_df[clusters_df['STATUS'] == 'Fresh'])
-            st.metric("Fresh", fresh_count)
-        with col3:
-            stale_count = len(clusters_df[clusters_df['STATUS'] == STALE_LABEL])
-            st.metric("Stale", stale_count)
-        with col4:
-            total_codes = clusters_df['RECORD_COUNT'].fillna(0).sum()
-            st.metric("Total Codes", f"{int(total_codes):,}")
-        
-        st.markdown("---")
-        
-        # Search bar
-        st.subheader("Search Clusters")
-        search_term = st.text_input("", placeholder="Search by name or description...", label_visibility="collapsed")
-        
-        # Filter clusters based on search
-        filtered_clusters = clusters_df
-        if search_term:
-            mask = (clusters_df['CLUSTER_ID'].str.contains(search_term, case=False, na=False) | 
-                   clusters_df['DESCRIPTION'].str.contains(search_term, case=False, na=False))
-            filtered_clusters = clusters_df[mask]
-            if filtered_clusters.empty:
-                st.info(f"No clusters match '{search_term}'")
-            else:
-                st.caption(f"Found {len(filtered_clusters)} cluster(s) matching '{search_term}'")
-        
-        # Cluster list
-        if not filtered_clusters.empty:
-            for idx, cluster in filtered_clusters.iterrows():
-                # Status emoji
-                status_emoji = get_status_emoji(cluster, STALE_LABEL)
-                
-                # Row layout
-                col1, col2, col3, col4, col5 = st.columns([0.3, 3.5, 2.2, 1.4, 1])
-                
-                with col1:
-                    st.markdown(f"<div style='text-align: center; line-height: 1.2;'>{status_emoji}</div>", 
-                              unsafe_allow_html=True)
-                
-                with col2:
-                    # Cluster type badge
-                    cluster_type = cluster.get('CLUSTER_TYPE', 'OBSERVATION')
-                    type_text = CLUSTER_TYPE_DISPLAY.get(cluster_type, '[observation]')
-                    st.markdown(f"**{cluster['CLUSTER_ID']}** <small style='color: #999;'>{type_text}</small>", 
-                              unsafe_allow_html=True)
-                    if cluster['DESCRIPTION']:
-                        st.caption(cluster['DESCRIPTION'])
-                
-                with col3:
-                    # Code count
-                    code_count = int(cluster['RECORD_COUNT']) if not pd.isna(cluster['RECORD_COUNT']) else 0
-                    codes_text = f"{code_count:,}"
-                    code_label = "code" if code_count == 1 else "codes"
-                    st.text(f"{codes_text} {code_label}")
-                    refresh_text = format_time_ago(cluster['LAST_SUCCESSFUL_REFRESH'])
-                    st.caption(f"Refreshed {refresh_text}")
-                
-                with col4:
-                    updated_by = cluster.get('UPDATED_BY', 'N/A')
-                    if pd.isna(updated_by):
-                        updated_by = 'N/A'
-                    st.caption("Updated by")
-                    st.text(str(updated_by))
+    st.markdown(
+        "Search every codeset - those we **author** here and those we **bring in** "
+        "(PCD/GDPPR, OpenCodelists, LTC LCS, UKHSA, immunisations, QAdmissions)."
+    )
 
-                with col5:
-                    # Action buttons
-                    btn_col1, btn_col2 = st.columns(2)
-                    with btn_col1:
-                        if st.button("👁️ View", key=f"view_{cluster['CLUSTER_ID']}", help="View details"):
-                            st.session_state.selected_cluster = cluster['CLUSTER_ID']
-                            st.session_state.page = 'details'
-                            rerun()
-                    with btn_col2:
-                        if st.button("✏️ Edit", key=f"edit_{cluster['CLUSTER_ID']}", help="Edit"):
-                            st.session_state.selected_cluster = cluster['CLUSTER_ID']
-                            st.session_state.page = 'edit'
-                            rerun()
-                
-                # Spacing
-                if idx < len(filtered_clusters) - 1:
-                    st.markdown("<div style='margin: 8px 0;'></div>", unsafe_allow_html=True)
+    try:
+        index_df = get_codeset_index()
+    except Exception as e:
+        st.error(f"⚠️ Database connection error: {str(e)}")
+        index_df = pd.DataFrame()
+
+    if index_df.empty:
+        st.info("🌟 **Welcome!** No codesets found. Author one with **✨ Add New** above.")
+        return
+
+    authored_df = index_df[index_df['IS_AUTHORED'] == True]
+    brought_df = index_df[index_df['IS_AUTHORED'] == False]
+
+    # KPIs
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Authored", f"{len(authored_df):,}")
+    c2.metric("Brought-in", f"{len(brought_df):,}")
+    c3.metric("Total codes", f"{int(index_df['CODE_COUNT'].fillna(0).sum()):,}")
+
+    st.markdown("---")
+
+    # Search + scope
+    col_s, col_f = st.columns([3, 2])
+    with col_s:
+        search_term = st.text_input(
+            "Search codesets", placeholder="Search by id or description...",
+            key="home_search", label_visibility="collapsed"
+        )
+    with col_f:
+        scope = st.radio(
+            "Show", options=["Authored", "Brought-in", "All"],
+            horizontal=True, index=0, key="home_scope", label_visibility="collapsed"
+        )
+
+    df = index_df
+    if scope == "Authored":
+        df = authored_df
+    elif scope == "Brought-in":
+        df = brought_df
+
+    # Source filter for brought-in codesets
+    if scope in ("Brought-in", "All"):
+        sources = sorted(brought_df['SOURCE'].unique().tolist())
+        chosen = st.multiselect(
+            "Filter by source", options=sources, default=[],
+            format_func=source_label, key="home_sources",
+            help="Limit brought-in codesets to specific sources"
+        )
+        if chosen:
+            df = df[df['IS_AUTHORED'] | df['SOURCE'].isin(chosen)] if scope == "All" else df[df['SOURCE'].isin(chosen)]
+
+    if search_term:
+        mask = (df['CLUSTER_ID'].str.contains(search_term, case=False, na=False) |
+                df['DESCRIPTION'].fillna('').str.contains(search_term, case=False, na=False))
+        df = df[mask]
+
+    total = len(df)
+    if total == 0:
+        st.info("No codesets match your search.")
+        return
+
+    # Authored first, then alphabetical; cap rendering for performance
+    df = df.sort_values(['IS_AUTHORED', 'CLUSTER_ID'], ascending=[False, True])
+    shown = df.head(RENDER_CAP)
+    note = "  ·  refine your search to narrow further" if total > RENDER_CAP else ""
+    st.caption(f"Showing {len(shown)} of {total:,} codeset(s){note}")
+
+    for _, row in shown.iterrows():
+        is_authored = bool(row['IS_AUTHORED'])
+        source = row['SOURCE']
+        cid = row['CLUSTER_ID']
+
+        col1, col2, col3, col4 = st.columns([3.6, 1.6, 1.8, 1.0])
+        with col1:
+            badge = "✍️ Authored" if is_authored else f"📥 {source_label(source)}"
+            st.markdown(
+                f"**{cid}** <small style='color:#888;'>{badge}</small>",
+                unsafe_allow_html=True
+            )
+            if pd.notna(row.get('DESCRIPTION')) and row.get('DESCRIPTION'):
+                st.caption(str(row['DESCRIPTION']))
+        with col2:
+            cc = int(row['CODE_COUNT']) if not pd.isna(row['CODE_COUNT']) else 0
+            st.text(f"{cc:,} codes")
+        with col3:
+            if is_authored:
+                st.caption(CLUSTER_TYPE_DISPLAY.get(row.get('CLUSTER_TYPE', 'OBSERVATION'), '[observation]'))
+            else:
+                st.caption("read-only")
+        with col4:
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("👁️", key=f"view_{source}_{cid}", help="View details"):
+                    _open_codeset(source, cid, 'details')
+            with b2:
+                if is_authored and st.button("✏️", key=f"edit_{source}_{cid}", help="Edit"):
+                    _open_codeset(source, cid, 'edit')
+
+        st.markdown("<div style='margin:6px 0;'></div>", unsafe_allow_html=True)

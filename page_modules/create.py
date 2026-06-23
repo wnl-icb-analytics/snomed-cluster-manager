@@ -115,6 +115,7 @@ def render_create():
                                     del st.session_state[key]
                             st.session_state["flash"] = ("success", f"✅ Cluster '{cluster_id}' created successfully!")
                             st.session_state.selected_cluster = cluster_id
+                            st.session_state.selected_source = None  # authored
                             st.session_state.page = 'details'
                             rerun()
     

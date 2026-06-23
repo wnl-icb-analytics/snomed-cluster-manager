@@ -27,6 +27,8 @@ if 'page' not in st.session_state:
     st.session_state.page = 'home'
 if 'selected_cluster' not in st.session_state:
     st.session_state.selected_cluster = None
+if 'selected_source' not in st.session_state:
+    st.session_state.selected_source = None
 
 # =============================================================================
 # MAIN APPLICATION HEADER

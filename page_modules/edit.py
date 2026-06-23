@@ -64,6 +64,8 @@ def render_edit():
                         if rename_cluster(cluster_id, new_cluster_id, cluster['ECL_EXPRESSION'], cluster['DESCRIPTION'], cluster.get('CLUSTER_TYPE')):
                             st.session_state["flash"] = ("success", f"✅ Cluster renamed from '{cluster_id}' to '{new_cluster_id}'!")
                             st.session_state.selected_cluster = new_cluster_id
+                            st.session_state.selected_source = None  # authored
+                            st.session_state.pop('edit_loaded_for', None)
                             rerun()
     
     # Edit form
@@ -127,5 +129,6 @@ def render_edit():
                 with st.spinner("Updating cluster..."):
                     if update_existing_cluster(cluster_id, current_ecl, description, cluster_type):
                         st.session_state["flash"] = ("success", f"✅ Cluster '{cluster_id}' updated successfully!")
+                        st.session_state.selected_source = None  # authored
                         st.session_state.page = 'details'
                         rerun()
