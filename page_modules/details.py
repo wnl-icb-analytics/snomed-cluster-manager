@@ -199,7 +199,10 @@ ORDER BY code;"""
 
 
 def render_external_details(cluster_id, source):
-    """Details page for a brought-in (read-only) codeset from COMBINED_CODESETS."""
+    """Details page for a brought-in (read-only) codeset from COMBINED_CODESETS.
+
+    Mirrors the authored cluster details layout, minus the authoring actions.
+    """
     meta = get_codeset_meta(cluster_id, source)
     if meta.empty:
         st.error(f"Codeset '{cluster_id}' not found in {source_label(source)}")
@@ -208,7 +211,7 @@ def render_external_details(cluster_id, source):
 
     info = meta.iloc[0]
 
-    # Header
+    # Header with back button (matches authored layout)
     col1, col2, col3 = st.columns([1, 6, 2])
     with col1:
         if st.button("← Back", use_container_width=True):
@@ -219,12 +222,21 @@ def render_external_details(cluster_id, source):
             st.session_state.page = 'analytics'
             rerun()
 
+    # Title on separate row to allow proper wrapping
     st.title(f"📋 {cluster_id}")
-    st.markdown(f"📥 **{source_label(source)}** (brought-in, read-only)")
+
+    # Source badge in normal text, description in italics
+    badge = f"📥 {source_label(source)} · read-only"
     if info.get('DESCRIPTION'):
-        st.markdown(f"*{info.get('DESCRIPTION')}*")
+        st.markdown(f"{badge} • *{info.get('DESCRIPTION')}*")
+    else:
+        st.markdown(badge)
+
+    # Flash message component
+    render_flash_message()
 
     # Analysis mode - brought-in codesets have no stored type, so the user picks
+    # here once and it carries through to the analytics page.
     modes = ['OBSERVATION', 'MEDICATION']
     current = st.session_state.get('codeset_mode', 'OBSERVATION')
     mode = st.radio(
@@ -236,31 +248,40 @@ def render_external_details(cluster_id, source):
     )
     st.session_state['codeset_mode'] = mode
 
-    # Member codes
-    code_count = int(info.get('CODE_COUNT') or 0)
-    st.metric("Member codes", f"{code_count:,}")
-
+    # Codeset info as KPI strip (mirrors authored details)
     codes_df = get_codeset_codes(cluster_id, source)
+    code_count = int(info.get('CODE_COUNT') or 0)
+    kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
+    with kpi_col1:
+        st.metric("Total Codes", f"{code_count:,}")
+    with kpi_col2:
+        st.metric("Source", source_label(source))
+    with kpi_col3:
+        st.metric("Mode", "Observation" if mode == 'OBSERVATION' else "Medication")
+    with kpi_col4:
+        st.metric("Access", "Read-only")
+
     if codes_df.empty:
         st.info("No member codes found for this codeset.")
-        return
-
-    code_search = st.text_input("🔍 Search codes", placeholder="Search by code or description...")
-    filtered = codes_df
-    if code_search:
-        mask = (codes_df['CODE'].astype(str).str.contains(code_search, case=False, na=False) |
-                codes_df['DISPLAY'].astype(str).str.contains(code_search, case=False, na=False))
-        filtered = codes_df[mask]
-
-    if filtered.empty:
-        st.info(f"No codes match '{code_search}'")
     else:
-        st.dataframe(filtered, use_container_width=True)
-        if len(filtered) < len(codes_df):
-            st.caption(f"Showing {len(filtered)} of {len(codes_df)} codes")
+        # Search codes
+        code_search = st.text_input("🔍 Search codes", placeholder="Search by code or description...")
+        filtered = codes_df
+        if code_search:
+            mask = (codes_df['CODE'].astype(str).str.contains(code_search, case=False, na=False) |
+                    codes_df['DISPLAY'].astype(str).str.contains(code_search, case=False, na=False))
+            filtered = codes_df[mask]
 
-    # SQL template
+        if not filtered.empty:
+            st.dataframe(filtered[['CODE', 'DISPLAY']], use_container_width=True)
+            if len(filtered) < len(codes_df):
+                st.caption(f"Showing {len(filtered)} of {len(codes_df)} codes")
+        else:
+            st.info(f"No codes match '{code_search}'")
+
+    # SQL query section (mirrors authored details)
     st.subheader("💻 SQL Query")
+    st.markdown("Copy this query to get all codes in this codeset:")
     sql_query = f"""-- Get all codes in codeset {cluster_id} ({source_label(source)})
 SELECT code, code_description, source
 FROM {DB_SCHEMA}.combined_codesets

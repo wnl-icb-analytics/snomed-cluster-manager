@@ -60,18 +60,17 @@ def render_analytics():
             st.error(f"Codeset '{cluster_id}' not found")
             st.session_state.page = 'home'
             rerun()
-        st.caption(f"📥 {source_label(source)} (brought-in)")
-        # Brought-in codesets have no stored type - let the user choose the mode
-        modes = ['OBSERVATION', 'MEDICATION']
-        current = st.session_state.get('codeset_mode', 'OBSERVATION')
-        cluster_type = st.radio(
-            "Analysis mode", options=modes,
-            index=modes.index(current) if current in modes else 0,
-            horizontal=True,
-            format_func=lambda m: "🩺 Observation" if m == 'OBSERVATION' else "💊 Medication"
-        )
-        st.session_state['codeset_mode'] = cluster_type
+        # Mode is chosen on the details page and carried here (no re-selection)
+        cluster_type = st.session_state.get('codeset_mode', 'OBSERVATION')
         record_count = int(meta.iloc[0]['CODE_COUNT'] or 0)
+
+    # Consistent subtitle: mode badge for everyone, source prefix for brought-in
+    mode_badge = "🩺 Observation" if cluster_type == 'OBSERVATION' else "💊 Medication"
+    if authored:
+        st.markdown(mode_badge)
+    else:
+        st.markdown(f"📥 **{source_label(source)}** · {mode_badge}")
+        st.caption("Mode is set on the codeset's details page")
 
     def cluster_member_codes():
         """All member codes for this codeset: authored cache or brought-in source."""
