@@ -55,16 +55,27 @@ def render_home():
 
     # Search + scope
     col_s, col_f = st.columns([3, 2])
+    # Durable filter state survives navigation to details/analytics and back.
+    # (Keyed widget state is cleared by Streamlit while the widget isn't rendered.)
+    scopes = ["Authored", "Brought-in", "All"]
+    st.session_state.setdefault('home_search_val', '')
+    st.session_state.setdefault('home_scope_val', 'Authored')
+    st.session_state.setdefault('home_sources_val', [])
+
     with col_s:
         search_term = st.text_input(
-            "Search codesets", placeholder="Search by id or description...",
-            key="home_search", label_visibility="collapsed"
+            "Search codesets", value=st.session_state['home_search_val'],
+            placeholder="Search by id or description...", label_visibility="collapsed"
         )
+        st.session_state['home_search_val'] = search_term
     with col_f:
+        scope_default = st.session_state['home_scope_val']
         scope = st.radio(
-            "Show", options=["Authored", "Brought-in", "All"],
-            horizontal=True, index=0, key="home_scope", label_visibility="collapsed"
+            "Show", options=scopes, horizontal=True,
+            index=scopes.index(scope_default) if scope_default in scopes else 0,
+            label_visibility="collapsed"
         )
+        st.session_state['home_scope_val'] = scope
 
     df = index_df
     if scope == "Authored":
@@ -76,11 +87,13 @@ def render_home():
     chosen = []
     if scope in ("Brought-in", "All"):
         sources = sorted(brought_df['SOURCE'].unique().tolist())
+        valid_default = [s for s in st.session_state['home_sources_val'] if s in sources]
         chosen = st.multiselect(
-            "Filter by source", options=sources, default=[],
-            format_func=source_label, key="home_sources",
+            "Filter by source", options=sources, default=valid_default,
+            format_func=source_label,
             help="Limit brought-in codesets to specific sources"
         )
+        st.session_state['home_sources_val'] = chosen
         if chosen:
             df = df[df['IS_AUTHORED'] | df['SOURCE'].isin(chosen)] if scope == "All" else df[df['SOURCE'].isin(chosen)]
 
