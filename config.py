@@ -79,16 +79,16 @@ button[kind="primary"],
 button[kind="primaryFormSubmit"],
 button[data-testid="stBaseButton-primary"],
 button[data-testid="stBaseButton-primaryFormSubmit"] {
-    background-color: #3b82f6 !important;
-    border: 1px solid #3b82f6 !important;
+    background-color: #1d4ed8 !important;
+    border: 1px solid #1d4ed8 !important;
     color: #ffffff !important;
 }
 button[kind="primary"]:hover,
 button[kind="primaryFormSubmit"]:hover,
 button[data-testid="stBaseButton-primary"]:hover,
 button[data-testid="stBaseButton-primaryFormSubmit"]:hover {
-    background-color: #2f6ae0 !important;
-    border-color: #2f6ae0 !important;
+    background-color: #3b82f6 !important;
+    border-color: #3b82f6 !important;
     color: #ffffff !important;
 }
 
