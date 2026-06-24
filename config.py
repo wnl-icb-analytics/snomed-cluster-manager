@@ -71,5 +71,32 @@ CUSTOM_CSS = """
     background: #e6e9ef;
     border-color: #d4dae6;
 }
+
+/* Primary buttons: solid accent fill with white text in ALL states.
+   Fixes SiS default rendering that showed the accent as text on a transparent
+   fill until hover (looked like the colours were inverted). */
+button[kind="primary"],
+button[kind="primaryFormSubmit"],
+button[data-testid="stBaseButton-primary"],
+button[data-testid="stBaseButton-primaryFormSubmit"] {
+    background-color: #3b82f6 !important;
+    border: 1px solid #3b82f6 !important;
+    color: #ffffff !important;
+}
+button[kind="primary"]:hover,
+button[kind="primaryFormSubmit"]:hover,
+button[data-testid="stBaseButton-primary"]:hover,
+button[data-testid="stBaseButton-primaryFormSubmit"]:hover {
+    background-color: #2f6ae0 !important;
+    border-color: #2f6ae0 !important;
+    color: #ffffff !important;
+}
+
+/* Secondary buttons: normal text by default, accent only on hover */
+button[kind="secondary"]:hover,
+button[data-testid="stBaseButton-secondary"]:hover {
+    border-color: #3b82f6 !important;
+    color: #3b82f6 !important;
+}
 </style>
 """
