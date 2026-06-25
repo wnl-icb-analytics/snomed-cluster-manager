@@ -212,15 +212,6 @@ def render_playground():
     with col3:
         st.markdown("**🔴 Advanced**")
         complex_examples = [
-            (
-                "Paracetamol products",
-                """<< (
-  << 373873005 |Pharmaceutical / biologic product| : {
-    762949000 |Has precise active ingredient| =
-      << 387517004 |Paracetamol|
-  }
-)"""
-            ),
             ("Drug ingredients (chained)", "<< 373873005 |Pharmaceutical / biologic product| . 762949000 |Has precise active ingredient|"),
             ("Viral lung infections (grouped)", "<< 40733004 |Infectious disease| : { 246075003 |Causative agent| = << 49872002 |Virus|, 363698007 |Finding site| = << 39607008 |Lung| }"),
             ("Body parts that fracture (reverse)", "< 91723000 |Anatomical structure| : R 363698007 |Finding site| = << 125605004 |Fracture of bone|"),
