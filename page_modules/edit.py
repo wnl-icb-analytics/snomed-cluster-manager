@@ -4,7 +4,14 @@
 
 import streamlit as st
 from database import rerun
-from services.cluster_service import test_ecl_expression, update_existing_cluster, rename_cluster, get_all_clusters
+from services.cluster_service import (
+    get_all_clusters,
+    get_cluster_versions,
+    rename_cluster,
+    restore_cluster_version,
+    test_ecl_expression,
+    update_existing_cluster,
+)
 from components.cluster_components import render_flash_message
 
 
@@ -45,6 +52,98 @@ def render_edit():
     
     # Flash message component
     render_flash_message()
+
+    versions_df = get_cluster_versions(cluster_id)
+    with st.expander(
+        f"🕘 Definition History ({len(versions_df)} version(s))",
+        expanded=False,
+    ):
+        if versions_df.empty:
+            st.info("No saved definition versions are available.")
+        else:
+            version_options = versions_df['VERSION_ID'].tolist()
+
+            def format_version(version_id):
+                row = versions_df[versions_df['VERSION_ID'] == version_id].iloc[0]
+                created_at = row.get('CREATED_AT')
+                actor = row.get('CREATED_BY') or 'System'
+                change_type = row.get('CHANGE_TYPE') or 'UPDATE'
+                return (
+                    f"v{int(row['VERSION_NUMBER'])} · {change_type} · "
+                    f"{created_at} · {actor}"
+                )
+
+            selected_version_id = st.selectbox(
+                "Select a saved version",
+                options=version_options,
+                format_func=format_version,
+                key=f"restore_version_{cluster_id}",
+            )
+            selected_version = versions_df[
+                versions_df['VERSION_ID'] == selected_version_id
+            ].iloc[0]
+
+            version_cols = st.columns(3)
+            version_cols[0].metric(
+                "Version", f"v{int(selected_version['VERSION_NUMBER'])}"
+            )
+            version_cols[1].metric(
+                "Type", selected_version.get('CLUSTER_TYPE') or "—"
+            )
+            version_cols[2].metric(
+                "Hash", str(selected_version.get('VERSION_HASH') or "")[:12]
+            )
+
+            if selected_version.get('DESCRIPTION'):
+                st.markdown(f"*{selected_version.get('DESCRIPTION')}*")
+            st.code(
+                selected_version.get('ECL_EXPRESSION') or "",
+                language='go',
+            )
+            st.caption(
+                "Content hash: "
+                f"`{selected_version.get('CONTENT_HASH')}`"
+            )
+
+            current_content = (
+                cluster.get('ECL_EXPRESSION', ''),
+                cluster.get('DESCRIPTION', ''),
+                cluster.get('CLUSTER_TYPE', ''),
+            )
+            selected_content = (
+                selected_version.get('ECL_EXPRESSION') or '',
+                selected_version.get('DESCRIPTION') or '',
+                selected_version.get('CLUSTER_TYPE') or '',
+            )
+
+            if selected_content == current_content:
+                st.info("This version matches the current definition.")
+            else:
+                confirm_restore = st.checkbox(
+                    "I understand this will replace the current definition and refresh its cache",
+                    key=f"confirm_restore_{cluster_id}",
+                )
+                if st.button(
+                    f"↩️ Restore v{int(selected_version['VERSION_NUMBER'])}",
+                    type="secondary",
+                    disabled=not confirm_restore,
+                    key=f"restore_button_{cluster_id}",
+                ):
+                    with st.spinner("Restoring definition and refreshing cache..."):
+                        restored, message = restore_cluster_version(
+                            cluster_id,
+                            selected_version_id,
+                        )
+                    if restored:
+                        st.session_state["flash"] = (
+                            "success",
+                            f"✅ Restored {cluster_id} from "
+                            f"v{int(selected_version['VERSION_NUMBER'])}.",
+                        )
+                        st.session_state.pop('edit_loaded_for', None)
+                        rerun()
+                    else:
+                        st.error(f"❌ {message}")
     
     # Rename cluster section
     with st.expander("🏷️ Rename Cluster", expanded=False):

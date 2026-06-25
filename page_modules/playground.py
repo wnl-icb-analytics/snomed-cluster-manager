@@ -4,7 +4,166 @@
 
 import streamlit as st
 from database import rerun
-from services.cluster_service import test_ecl_expression
+from services.cluster_service import (
+    create_new_cluster,
+    get_all_clusters,
+    test_ecl_expression,
+)
+
+
+def _parse_review_terms(value):
+    """Return non-empty comma-separated review terms."""
+    return [term.strip() for term in (value or "").split(",") if term.strip()]
+
+
+def _matching_results(result_df, terms):
+    """Find rows whose code or display contains any review term."""
+    if not terms or result_df.empty:
+        return result_df.iloc[0:0]
+
+    code_text = result_df['CODE'].astype(str)
+    display_text = result_df['DISPLAY'].fillna("").astype(str)
+    mask = False
+    for term in terms:
+        mask = (
+            mask
+            | code_text.str.contains(term, case=False, na=False, regex=False)
+            | display_text.str.contains(term, case=False, na=False, regex=False)
+        )
+    return result_df[mask]
+
+
+def _render_clinical_review(result_df):
+    """Guide users through a lightweight clinical review of ECL results."""
+    st.markdown("### 🩺 Clinical Review")
+    st.caption(
+        "A successful ECL query is syntactically valid, but its results still need "
+        "clinical review before they become a trusted codeset."
+    )
+
+    clinical_intent = st.text_area(
+        "Clinical intent",
+        placeholder=(
+            "Describe what this codeset should identify, its intended use, and any "
+            "important boundaries."
+        ),
+        key="review_clinical_intent",
+        help=(
+            "Example: Identify all semaglutide products and packs used to analyse "
+            "medication orders; include combination products, exclude other GLP-1 agonists."
+        ),
+    )
+    if not clinical_intent.strip():
+        st.info("State the clinical intent so the result can be reviewed against it.")
+
+    duplicate_codes = int(result_df['CODE'].astype(str).duplicated().sum())
+    missing_labels = int(result_df['DISPLAY'].fillna("").astype(str).str.strip().eq("").sum())
+    unique_systems = (
+        result_df['SYSTEM'].nunique(dropna=True)
+        if 'SYSTEM' in result_df.columns
+        else 0
+    )
+
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("Returned codes", f"{len(result_df):,}")
+    metric_cols[1].metric("Code systems", f"{unique_systems:,}")
+    metric_cols[2].metric("Duplicate codes", f"{duplicate_codes:,}")
+    metric_cols[3].metric("Missing labels", f"{missing_labels:,}")
+
+    if len(result_df) >= 50000:
+        st.warning(
+            "This result reached the 50,000-code API limit. Treat it as potentially "
+            "incomplete and narrow the expression before creating a cluster."
+        )
+    elif len(result_df) > 5000:
+        st.warning(
+            "This is a broad codeset. Check whether the anchor concept is too general "
+            "and inspect several result regions before saving it."
+        )
+
+    st.markdown("**Check concepts you expect to include or exclude**")
+    review_cols = st.columns(2)
+    with review_cols[0]:
+        inclusion_text = st.text_input(
+            "Expected inclusions",
+            placeholder="Comma-separated codes or terms",
+            key="review_expected_inclusions",
+            help="Examples: Ozempic, semaglutide, 764283003",
+        )
+    with review_cols[1]:
+        exclusion_text = st.text_input(
+            "Potential false positives",
+            placeholder="Comma-separated codes or terms",
+            key="review_potential_exclusions",
+            help="Search for concepts that should not be in the final group.",
+        )
+
+    inclusion_terms = _parse_review_terms(inclusion_text)
+    exclusion_terms = _parse_review_terms(exclusion_text)
+    inclusion_matches = _matching_results(result_df, inclusion_terms)
+    exclusion_matches = _matching_results(result_df, exclusion_terms)
+
+    if inclusion_terms:
+        if inclusion_matches.empty:
+            st.error(
+                "None of the expected inclusion terms were found. Recheck the anchor "
+                "concept, hierarchy direction and refinements."
+            )
+        else:
+            st.success(
+                f"Found {len(inclusion_matches):,} row(s) matching expected inclusions."
+            )
+            st.dataframe(inclusion_matches.head(20), use_container_width=True)
+
+    if exclusion_terms:
+        if exclusion_matches.empty:
+            st.success("No rows matched the potential false-positive terms.")
+        else:
+            st.warning(
+                f"Found {len(exclusion_matches):,} possible false-positive row(s)."
+            )
+            st.dataframe(exclusion_matches.head(20), use_container_width=True)
+
+    with st.expander("Inspect a representative result sample", expanded=False):
+        sample_size = min(20, len(result_df))
+        if sample_size:
+            # Fixed random state keeps reruns stable while avoiding a misleading
+            # code-sorted sample from only one part of the hierarchy.
+            sample = result_df.sample(n=sample_size, random_state=42)
+            st.dataframe(sample.sort_values('CODE'), use_container_width=True)
+        st.caption(
+            "Also search for edge cases manually. A small sample cannot prove clinical validity."
+        )
+
+    st.markdown("**Review checklist**")
+    checklist_cols = st.columns(2)
+    with checklist_cols[0]:
+        intent_confirmed = st.checkbox(
+            "The clinical purpose and population are clear",
+            key="review_intent_confirmed",
+        )
+        inclusions_confirmed = st.checkbox(
+            "Expected inclusions are present",
+            key="review_inclusions_confirmed",
+        )
+    with checklist_cols[1]:
+        exclusions_confirmed = st.checkbox(
+            "Unexpected branches and false positives were reviewed",
+            key="review_exclusions_confirmed",
+        )
+        maintenance_confirmed = st.checkbox(
+            "The expression should remain meaningful as SNOMED evolves",
+            key="review_maintenance_confirmed",
+        )
+
+    return bool(clinical_intent.strip()) and all(
+        (
+            intent_confirmed,
+            inclusions_confirmed,
+            exclusions_confirmed,
+            maintenance_confirmed,
+        )
+    )
 
 
 def render_playground():
@@ -17,7 +176,28 @@ def render_playground():
             st.session_state.page = 'home'
             rerun()
     
-    st.markdown("Test SNOMED CT Expression Constraint Language (ECL) expressions before creating clusters.")
+    st.markdown(
+        "Build and review SNOMED CT Expression Constraint Language (ECL) "
+        "expressions before creating clinically meaningful clusters."
+    )
+
+    with st.expander("🧭 A reliable codeset-building workflow", expanded=True):
+        st.markdown("""
+        1. **State the clinical intent** — what should this group identify, for whom,
+           and for what use?
+        2. **Choose the anchor** — prefer an established reference set when one exists;
+           otherwise select the narrowest suitable SNOMED concept.
+        3. **Build the expression** — decide exact concept vs descendants, then add
+           grouped refinements, unions and exclusions.
+        4. **Review the result** — check expected inclusions, likely false positives,
+           inactive/history requirements and whether the result is unexpectedly broad.
+        5. **Validate in data** — after saving, inspect mapped clinical usage and patient
+           impact. A clinically sensible terminology set may still behave unexpectedly
+           in source data.
+
+        **Remember:** valid ECL means the server understood the expression. It does not
+        by itself mean the resulting codeset is clinically correct.
+        """)
     
     # Always-visible ECL guidance
     st.markdown("### ℹ️ ECL Quick Reference")
@@ -26,7 +206,12 @@ def render_playground():
     Add refinements with `: attribute = value`. Combine with `AND`, `OR`, `MINUS`.  
     
     **Examples:** `<< 73211009 |Diabetes mellitus|` returns all diabetes types.  
-    `<< 373873005 |Pharmaceutical / biologic product| : 127489000 |Has active ingredient| = << 387517004 |Paracetamol|` returns paracetamol medications.
+    `<< ( << 373873005 |Pharmaceutical / biologic product| : 127489000 |Has active ingredient| = << 387517004 |Paracetamol| )`
+    returns paracetamol clinical products and their product descendants.
+
+    **Medication note:** UK package concepts are a separate hierarchy. Use
+    `781405001 |Medicinal product package|` with `774160008 |Contains clinical drug|`
+    when packs must be included; see the medication guide below.
     
     *Note: Text between `|` pipes is optional - only for readability. The server ignores the text between pipes.*
     """)
@@ -72,8 +257,23 @@ def render_playground():
         
         # Store test results in session state
         if not result_df.empty:
+            tested_new_expression = (
+                st.session_state.playground_tested_ecl != test_ecl
+            )
             st.session_state.playground_test_results = result_df
             st.session_state.playground_tested_ecl = test_ecl
+            if tested_new_expression:
+                for key, default in {
+                    "review_clinical_intent": "",
+                    "review_expected_inclusions": "",
+                    "review_potential_exclusions": "",
+                    "review_intent_confirmed": False,
+                    "review_inclusions_confirmed": False,
+                    "review_exclusions_confirmed": False,
+                    "review_maintenance_confirmed": False,
+                    "search_results_input": "",
+                }.items():
+                    st.session_state[key] = default
         else:
             st.session_state.playground_test_results = None
             st.session_state.playground_tested_ecl = None
@@ -96,6 +296,10 @@ def render_playground():
         else:
             st.success(f"✅ ECL expression is valid! Found {len(result_df):,} codes")
         
+        review_complete = _render_clinical_review(result_df)
+
+        st.markdown("### 🔎 Explore All Results")
+
         # Search functionality
         search_term = st.text_input("🔍 Search results", placeholder="Search by code or description...", key="search_results_input")
         
@@ -113,9 +317,17 @@ def render_playground():
             if len(filtered_df) < len(result_df):
                 st.caption(f"Showing {len(filtered_df)} of {len(result_df)} results")
             
-            # Quick create cluster section
+            # Create the reviewed cluster directly from the Playground.
             st.markdown("---")
-            st.subheader("Create Cluster from this ECL")
+            st.subheader("✨ Add as a New Cluster")
+            st.caption(
+                "The tested expression above will be saved and its cache populated. "
+                "After creation, the cluster details page opens automatically."
+            )
+            if not review_complete:
+                st.info(
+                    "Complete the clinical-review checklist above before creating a cluster."
+                )
             
             col1, col2 = st.columns([2, 2])
             with col1:
@@ -133,22 +345,52 @@ def render_playground():
                 )
             with col4:
                 st.markdown("<br>", unsafe_allow_html=True)  # Add space to align button
-                create_clicked = st.button("✨ Create Cluster", type="primary", use_container_width=True, key="quick_create_button")
+                create_clicked = st.button(
+                    "✨ Create and Open Cluster",
+                    type="primary",
+                    use_container_width=True,
+                    key="quick_create_button",
+                    disabled=not review_complete,
+                )
             
             if create_clicked:
-                if not quick_cluster_id.strip():
+                normalized_cluster_id = quick_cluster_id.strip().upper()
+                if not normalized_cluster_id:
                     st.error("❌ Cluster ID is required")
                 elif not quick_description.strip():
                     st.error("❌ Description is required")
                 else:
-                    st.session_state["quick_create"] = {
-                        "cluster_id": quick_cluster_id.strip(),
-                        "description": quick_description.strip(),
-                        "ecl_expression": test_ecl,
-                        "cluster_type": quick_cluster_type
-                    }
-                    st.session_state.page = 'create'
-                    rerun()
+                    existing_clusters = get_all_clusters()
+                    existing_ids = (
+                        set(existing_clusters['CLUSTER_ID'].astype(str).str.upper())
+                        if not existing_clusters.empty
+                        else set()
+                    )
+                    if normalized_cluster_id in existing_ids:
+                        st.error(
+                            f"❌ Cluster '{normalized_cluster_id}' already exists. "
+                            "Choose a new ID or edit the existing cluster."
+                        )
+                    else:
+                        with st.spinner(
+                            f"Creating and refreshing '{normalized_cluster_id}'..."
+                        ):
+                            created = create_new_cluster(
+                                normalized_cluster_id,
+                                test_ecl,
+                                quick_description.strip(),
+                                quick_cluster_type,
+                            )
+
+                        if created:
+                            st.session_state["flash"] = (
+                                "success",
+                                f"✅ Cluster '{normalized_cluster_id}' created successfully!",
+                            )
+                            st.session_state.selected_cluster = normalized_cluster_id
+                            st.session_state.selected_source = None
+                            st.session_state.page = 'details'
+                            rerun()
         else:
             st.info(f"No results match '{search_term}'")
     
@@ -191,7 +433,23 @@ def render_playground():
     with col3:
         st.markdown("**🔴 Advanced**")
         complex_examples = [
-            ("Drug ingredients (chained)", "<< 373873005 |Pharmaceutical product| . 127489000 |Has active ingredient|"),
+            ("Drug ingredients (chained)", "<< 373873005 |Pharmaceutical / biologic product| . 127489000 |Has active ingredient|"),
+            (
+                "Paracetamol products + packs",
+                """(
+  << (
+    << 373873005 |Pharmaceutical / biologic product| :
+      127489000 |Has active ingredient| = << 387517004 |Paracetamol|
+  )
+) OR (
+  << 781405001 |Medicinal product package| : {
+    774160008 |Contains clinical drug| = << (
+      << 373873005 |Pharmaceutical / biologic product| :
+        127489000 |Has active ingredient| = << 387517004 |Paracetamol|
+    )
+  }
+)"""
+            ),
             ("Viral lung infections (grouped)", "<< 40733004 |Infectious disease| : { 246075003 |Causative agent| = << 49872002 |Virus|, 363698007 |Finding site| = << 39607008 |Lung| }"),
             ("Body parts that fracture (reverse)", "< 91723000 |Anatomical structure| : R 363698007 |Finding site| = << 125605004 |Fracture of bone|"),
             ("Anything causing edema (wildcard)", "* : << 47429007 |Associated with| = << 267038008 |Edema|")
@@ -220,6 +478,71 @@ def render_playground():
         - `^` member of reference set
         - `MINUS`, `AND`, `OR` for boolean logic
         - `{{ +HISTORY-MAX }}` includes inactive concepts
+        """)
+
+    with st.expander("💊 Medication Products & Packages (UK 2025/26 Model)", expanded=False):
+        st.markdown("""
+        The SNOMED CT UK Drug Extension was aligned with the international medicinal-product
+        and national drug-extension models during the October 2025 to May 2026 releases.
+
+        **Choose the ingredient relationship by intent:**
+
+        - `127489000 |Has active ingredient|` — ingredient-family queries, including inferred
+          salt and modification forms.
+        - `762949000 |Has precise active ingredient|` — an exact ingredient or salt/modification.
+        - `732943007 |Has basis of strength substance|` — the substance on which strength is based.
+
+        **Ingredient family, including salts**
+
+        Query the correct base substance with inferred `Has active ingredient`. SNOMED follows
+        `738774007 |Is modification of|`, so salts normally do not need to be listed manually.
+
+        ```go
+        << (
+          << 373873005 |Pharmaceutical / biologic product| :
+            127489000 |Has active ingredient| =
+              << 264325000 |Valproate|
+        )
+        ```
+
+        This includes products modelled with modifications such as sodium valproate and
+        valproate semisodium.
+
+        **Include UK medicinal-product packages**
+
+        Packages do not automatically descend from a clinical-product expression. Add a package
+        branch using the international package hierarchy:
+
+        ```go
+        (
+          << (
+            << 373873005 |Pharmaceutical / biologic product| :
+              127489000 |Has active ingredient| =
+                << 264325000 |Valproate|
+          )
+        ) OR (
+          << 781405001 |Medicinal product package| : {
+            774160008 |Contains clinical drug| = << (
+              << 373873005 |Pharmaceutical / biologic product| :
+                127489000 |Has active ingredient| =
+                  << 264325000 |Valproate|
+            )
+          }
+        )
+        ```
+
+        **The inner `<<` is important:** keep
+        `Contains clinical drug = << (product expression)`. It allows packages to match
+        descendant clinical drugs and real clinical drugs. Removing it can return no packages.
+
+        **Do not use these legacy UK patterns for new clusters:**
+
+        - `8653601000001108 |Virtual medicinal product pack|` as the package root
+        - `10362701000001108 |Has AMP|`
+        - a separate actual-medicinal-product-pack branch
+
+        Use `781405001 |Medicinal product package|` plus `Contains clinical drug` for both
+        virtual and actual package concepts.
         """)
     
     with st.expander("🎯 Constraint Operators & Basic Syntax", expanded=False):
@@ -296,8 +619,9 @@ def render_playground():
         **Key Point:** Groups reflect how SNOMED models complex concepts with multiple related attributes.
 
         **Simple Rule:**
-        - Comma `,` = AND (within same group)
-        - Curly braces `{}` = "these attributes must be linked in SNOMED's model"
+        - Comma `,` = logical AND between refinements
+        - Curly braces `{}` = the enclosed attributes must occur in the same
+          SNOMED relationship group
 
         **When to Use Groups:**
         - Multiple body sites with different problems
@@ -307,7 +631,7 @@ def render_playground():
 
         **Cardinality (How Many):**
         ```go
-        < 373873005 |Pharmaceutical product| :
+        < 373873005 |Pharmaceutical / biologic product| :
             [2..5] 127489000 |Has active ingredient| = < 105590001 |Substance|
         ```
         *"Products with 2-5 active ingredients"*
@@ -326,14 +650,21 @@ def render_playground():
 
         **Common Use Cases:**
 
-        **1. Drug Strengths (find medications by dose range):**
+        **1. Drug Strengths (find products by presentation strength):**
         ```go
-        < 763158003 |Medicinal product| :
-            1142135004 |Has presentation strength value| >= #250,
-            1142135004 |Has presentation strength value| <= #500,
-            732945000 |Has presentation strength unit| = 258684004 |milligram|
+        < 763158003 |Medicinal product| : {
+            762949000 |Has precise active ingredient| =
+                << 387517004 |Paracetamol|,
+            1142135004 |Has presentation strength numerator value| >= #250,
+            1142135004 |Has presentation strength numerator value| <= #500,
+            732945000 |Has presentation strength numerator unit| =
+                258684004 |milligram|
+        }
         ```
-        *"Find medications between 250-500mg strength"*
+        *"Find paracetamol products with a 250-500mg presentation-strength numerator"*
+
+        Keep the ingredient and its strength attributes in the same `{ attribute group }`,
+        especially for combination products.
 
         **2. Laboratory Reference Ranges:**
         ```go
@@ -392,12 +723,14 @@ def render_playground():
         **Example 1 - Get All Drug Ingredients:**
         Without dots (normal): Returns the medications
         ```go
-        << 373873005 |Pharmaceutical product| : 127489000 |Has active ingredient| = << 387517004 |Paracetamol|
+        << 373873005 |Pharmaceutical / biologic product| :
+            127489000 |Has active ingredient| = << 387517004 |Paracetamol|
         ```
 
         With dots (chained): Returns the ingredients themselves
         ```go
-        << 373873005 |Pharmaceutical product| . 127489000 |Has active ingredient|
+        << 373873005 |Pharmaceutical / biologic product| .
+            127489000 |Has active ingredient|
         ```
         Returns: paracetamol, ibuprofen, aspirin, etc. (the substances, not the meds)
 
