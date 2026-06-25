@@ -20,6 +20,7 @@ def get_all_clusters():
         query = f"""
         SELECT 
             c.cluster_id AS CLUSTER_ID,
+            c.cluster_uid AS CLUSTER_UID,
             c.ecl_expression AS ECL_EXPRESSION,
             c.description AS DESCRIPTION,
             c.cluster_type AS CLUSTER_TYPE,
@@ -56,15 +57,15 @@ def get_all_clusters():
 
 
 def test_ecl_expression(ecl_expr):
-    """Test an ECL expression using ECL_DETAILS function (supports full 50k limit)"""
+    """Test an ECL expression through the local 50k-limited wrapper."""
     try:
         safe_expr = ecl_expr.replace("'", "''")
-        # Try ECL_DETAILS first (full API limit), fallback to ECL_TEST_DETAILS (10k limit) if needed
-        try:
-            return conn.sql(f"SELECT code, display, system FROM TABLE({DB_SCHEMA}.ECL_DETAILS('{safe_expr}'))").to_pandas()
-        except:
-            # Fallback to TEST version if ECL_DETAILS doesn't exist
-            return conn.sql(f"SELECT code, display, system FROM TABLE({DB_SCHEMA}.ECL_TEST_DETAILS('{safe_expr}'))").to_pandas()
+        return conn.sql(
+            f"""
+            SELECT code, display, system
+            FROM TABLE({DB_SCHEMA}.ECL_TEST_DETAILS('{safe_expr}'))
+            """
+        ).to_pandas()
     except Exception as e:
         st.error(f"ECL Error: {str(e)}")
         return pd.DataFrame()
@@ -207,6 +208,60 @@ def get_recent_cluster_changes(limit=100):
         return pd.DataFrame()
 
 
+def get_cluster_versions(cluster_id, limit=100):
+    """Get append-only definition versions for an authored cluster."""
+    try:
+        safe_id = cluster_id.upper().strip().replace("'", "''")
+        safe_limit = max(1, min(int(limit), 500))
+        query = f"""
+        SELECT
+            v.version_id AS VERSION_ID,
+            v.version_hash AS VERSION_HASH,
+            v.content_hash AS CONTENT_HASH,
+            v.ecl_expression_hash AS ECL_EXPRESSION_HASH,
+            v.version_number AS VERSION_NUMBER,
+            v.cluster_id AS CLUSTER_ID_AT_VERSION,
+            v.ecl_expression AS ECL_EXPRESSION,
+            v.description AS DESCRIPTION,
+            v.cluster_type AS CLUSTER_TYPE,
+            v.change_type AS CHANGE_TYPE,
+            v.source_version_id AS SOURCE_VERSION_ID,
+            v.created_at AS CREATED_AT,
+            v.created_by AS CREATED_BY,
+            v.comment AS COMMENT
+        FROM {DB_SCHEMA}.ECL_CLUSTER_VERSIONS v
+        JOIN {DB_SCHEMA}.ECL_CLUSTERS c
+          ON c.cluster_uid = v.cluster_uid
+        WHERE c.cluster_id = '{safe_id}'
+        ORDER BY v.version_number DESC
+        LIMIT {safe_limit}
+        """
+        return conn.sql(query).to_pandas()
+    except Exception as e:
+        st.error(f"Version History Error: {str(e)}")
+        return pd.DataFrame()
+
+
+def restore_cluster_version(cluster_id, version_id):
+    """Restore an authored cluster definition from an append-only version."""
+    try:
+        safe_id = cluster_id.upper().strip().replace("'", "''")
+        safe_version_id = str(version_id).strip().replace("'", "''")
+        actor = st.user.get("email") if hasattr(st, "user") else None
+        actor_safe = ((actor or "").upper()).replace("'", "''")
+        query = (
+            f"CALL {DB_SCHEMA}.RESTORE_ECL_CLUSTER_VERSION("
+            f"'{safe_id}', '{safe_version_id}', '{actor_safe}')"
+        )
+        result = conn.sql(query).to_pandas()
+        message = str(result.iloc[0, 0]) if not result.empty else "No result"
+        if message.startswith("SUCCESS"):
+            return True, message
+        return False, message
+    except Exception as e:
+        return False, f"Restore failed: {str(e)}"
+
+
 def cluster_matches_expected(cluster_id: str, expected_ecl: str, expected_desc: str) -> bool:
     """Check if cluster matches expected values"""
     try:
@@ -237,6 +292,18 @@ def create_new_cluster(cluster_id, ecl_expression, description, cluster_type='OB
         actor = st.user.get("email") if hasattr(st, 'user') else None
         actor_upper = (actor or "").upper()
         actor_safe = actor_upper.replace("'", "''")
+
+        existing = conn.sql(
+            f"""
+            SELECT COUNT(*) AS cluster_count
+            FROM {DB_SCHEMA}.ECL_CLUSTERS
+            WHERE cluster_id = '{safe_id}'
+            """
+        ).to_pandas()
+        if not existing.empty and int(existing.iloc[0]['CLUSTER_COUNT']) > 0:
+            st.error(f"❌ Cluster '{safe_id}' already exists")
+            return False
+
         query = f"CALL {DB_SCHEMA}.UPSERT_ECL_CLUSTER('{safe_id}', '{safe_ecl}', '{safe_desc}', '{actor_safe}', '{safe_type}')"
         result = conn.sql(query).to_pandas()
         if result.empty:
@@ -293,36 +360,14 @@ def update_existing_cluster(cluster_id, ecl_expression, description, cluster_typ
     except Exception as e:
         if cluster_matches_expected(safe_id, ecl_expression, description):
             return True
-        
-        # Fallback: perform MERGE directly if CALL failed
-        try:
-            merge_sql = f"""
-            MERGE INTO {DB_SCHEMA}.ECL_CLUSTERS AS target
-            USING (SELECT '{safe_id}' AS cluster_id) AS source
-            ON target.cluster_id = source.cluster_id
-            WHEN MATCHED THEN UPDATE SET 
-                ecl_expression = '{safe_ecl}',
-                description = '{safe_desc}',
-                cluster_type = '{safe_type}',
-                updated_at = CURRENT_TIMESTAMP(),
-                updated_by = '{actor_safe or ""}'
-            WHEN NOT MATCHED THEN INSERT (cluster_id, ecl_expression, description, cluster_type, created_by, updated_by, created_at, updated_at)
-                VALUES ('{safe_id}', '{safe_ecl}', '{safe_desc}', '{safe_type}', '{actor_safe or ""}', '{actor_safe or ""}', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP());
-            """
-            conn.sql(merge_sql).collect()
-            conn.sql(f"CALL {DB_SCHEMA}.FORCE_REFRESH_ECL_CLUSTER('{safe_id}', '{actor_safe}')").collect()
-            st.info("ℹ️ Procedure call failed; applied direct MERGE + refresh fallback.")
-            return True
-        except Exception as e2:
-            if cluster_matches_expected(safe_id, ecl_expression, description):
-                return True
-            details = getattr(e2, 'msg', None) or str(e2)
-            sfqid = getattr(e2, 'sfqid', None)
-            errno = getattr(e2, 'errno', None)
-            sqlstate = getattr(e2, 'sqlstate', None)
-            meta = f" [errno={errno}, sqlstate={sqlstate}, sfqid={sfqid}]" if (errno or sqlstate or sfqid) else ""
-            st.error(f"Update Error: {details}{meta}")
-            return False
+
+        details = getattr(e, 'msg', None) or str(e)
+        sfqid = getattr(e, 'sfqid', None)
+        errno = getattr(e, 'errno', None)
+        sqlstate = getattr(e, 'sqlstate', None)
+        meta = f" [errno={errno}, sqlstate={sqlstate}, sfqid={sfqid}]" if (errno or sqlstate or sfqid) else ""
+        st.error(f"Update Error: {details}{meta}")
+        return False
 
 
 def delete_cluster(cluster_id):
@@ -367,7 +412,7 @@ def rename_cluster(old_cluster_id: str, new_cluster_id: str, ecl_expression: str
             query = f"CALL {DB_SCHEMA}.RENAME_ECL_CLUSTER('{safe_old}', '{safe_new}', '{safe_ecl}', '{safe_desc}', '{actor_safe}', NULL)"
         else:
             query = f"CALL {DB_SCHEMA}.RENAME_ECL_CLUSTER('{safe_old}', '{safe_new}', '{safe_ecl}', '{safe_desc}', '{actor_safe}', '{safe_type}')"
-        result = conn.sql(query)
+        result = conn.sql(query).to_pandas()
         if result.empty:
             st.error("❌ Rename failed: procedure returned no result")
             return False
