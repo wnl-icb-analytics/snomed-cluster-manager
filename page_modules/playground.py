@@ -176,44 +176,21 @@ def render_playground():
             st.session_state.page = 'home'
             rerun()
     
-    st.markdown(
-        "Build and review SNOMED CT Expression Constraint Language (ECL) "
-        "expressions before creating clinically meaningful clusters."
+    st.caption(
+        "Define the clinical intent, test the expression, review its concepts, "
+        "then save it as a cluster."
     )
-
-    with st.expander("🧭 A reliable codeset-building workflow", expanded=True):
-        st.markdown("""
-        1. **State the clinical intent** — what should this group identify, for whom,
-           and for what use?
-        2. **Choose the anchor** — prefer an established reference set when one exists;
-           otherwise select the narrowest suitable SNOMED concept.
-        3. **Build the expression** — decide exact concept vs descendants, then add
-           grouped refinements, unions and exclusions.
-        4. **Review the result** — check expected inclusions, likely false positives,
-           inactive/history requirements and whether the result is unexpectedly broad.
-        5. **Validate in data** — after saving, inspect mapped clinical usage and patient
-           impact. A clinically sensible terminology set may still behave unexpectedly
-           in source data.
-
-        **Remember:** valid ECL means the server understood the expression. It does not
-        by itself mean the resulting codeset is clinically correct.
-        """)
     
     # Always-visible ECL guidance
-    st.markdown("### ℹ️ ECL Quick Reference")
+    st.markdown("### ECL Quick Reference")
     st.markdown("""
-    Use `<< concept` for concept and all subtypes, `< concept` for subtypes only. 
-    Add refinements with `: attribute = value`. Combine with `AND`, `OR`, `MINUS`.  
-    
-    **Examples:** `<< 73211009 |Diabetes mellitus|` returns all diabetes types.  
-    `<< ( << 373873005 |Pharmaceutical / biologic product| : 127489000 |Has active ingredient| = << 387517004 |Paracetamol| )`
-    returns paracetamol clinical products and their product descendants.
+    `<< concept` includes the concept and its subtypes; `< concept` includes subtypes
+    only. Refine with `: attribute = value` and combine expressions with `AND`, `OR`
+    or `MINUS`.
 
-    **Medication note:** UK package concepts are a separate hierarchy. Use
-    `781405001 |Medicinal product package|` with `774160008 |Contains clinical drug|`
-    when packs must be included; see the medication guide below.
-    
-    *Note: Text between `|` pipes is optional - only for readability. The server ignores the text between pipes.*
+    Example: `<< 73211009 |Diabetes mellitus|`
+
+    *Text between `|` pipes is optional and used only for readability.*
     """)
     
     # Initialize session state for playground ECL and results
@@ -439,13 +416,15 @@ def render_playground():
                 """(
   << (
     << 373873005 |Pharmaceutical / biologic product| :
-      127489000 |Has active ingredient| = << 387517004 |Paracetamol|
+      { 762949000 |Has precise active ingredient| =
+          << 387517004 |Paracetamol| }
   )
 ) OR (
   << 781405001 |Medicinal product package| : {
     774160008 |Contains clinical drug| = << (
       << 373873005 |Pharmaceutical / biologic product| :
-        127489000 |Has active ingredient| = << 387517004 |Paracetamol|
+        { 762949000 |Has precise active ingredient| =
+            << 387517004 |Paracetamol| }
     )
   }
 )"""
