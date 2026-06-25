@@ -190,17 +190,7 @@ def render_playground():
 
     Example: `<< 73211009 |Diabetes mellitus|`
 
-    **Medication products:**
-    ```go
-    << (
-      << 373873005 |Pharmaceutical / biologic product| : {
-        762949000 |Has precise active ingredient| =
-          << 387517004 |Paracetamol|
-      }
-    )
-    ```
-    The inner expression identifies matching clinical products; the outer `<<`
-    also includes their more specific product descendants.
+    Medication products: `<< (<< 373873005 |Pharmaceutical / biologic product| : { 762949000 |Has precise active ingredient| = << 387517004 |Paracetamol| })`
 
     *Text between `|` pipes is optional and used only for readability.*
     """)
