@@ -190,6 +190,18 @@ def render_playground():
 
     Example: `<< 73211009 |Diabetes mellitus|`
 
+    **Medication products:**
+    ```go
+    << (
+      << 373873005 |Pharmaceutical / biologic product| : {
+        762949000 |Has precise active ingredient| =
+          << 387517004 |Paracetamol|
+      }
+    )
+    ```
+    The inner expression identifies matching clinical products; the outer `<<`
+    also includes their more specific product descendants.
+
     *Text between `|` pipes is optional and used only for readability.*
     """)
     
@@ -410,25 +422,16 @@ def render_playground():
     with col3:
         st.markdown("**🔴 Advanced**")
         complex_examples = [
-            ("Drug ingredients (chained)", "<< 373873005 |Pharmaceutical / biologic product| . 127489000 |Has active ingredient|"),
             (
-                "Paracetamol products + packs",
-                """(
-  << (
-    << 373873005 |Pharmaceutical / biologic product| :
-      { 762949000 |Has precise active ingredient| =
-          << 387517004 |Paracetamol| }
-  )
-) OR (
-  << 781405001 |Medicinal product package| : {
-    774160008 |Contains clinical drug| = << (
-      << 373873005 |Pharmaceutical / biologic product| :
-        { 762949000 |Has precise active ingredient| =
-            << 387517004 |Paracetamol| }
-    )
+                "Paracetamol products",
+                """<< (
+  << 373873005 |Pharmaceutical / biologic product| : {
+    762949000 |Has precise active ingredient| =
+      << 387517004 |Paracetamol|
   }
 )"""
             ),
+            ("Drug ingredients (chained)", "<< 373873005 |Pharmaceutical / biologic product| . 762949000 |Has precise active ingredient|"),
             ("Viral lung infections (grouped)", "<< 40733004 |Infectious disease| : { 246075003 |Causative agent| = << 49872002 |Virus|, 363698007 |Finding site| = << 39607008 |Lung| }"),
             ("Body parts that fracture (reverse)", "< 91723000 |Anatomical structure| : R 363698007 |Finding site| = << 125605004 |Fracture of bone|"),
             ("Anything causing edema (wildcard)", "* : << 47429007 |Associated with| = << 267038008 |Edema|")
