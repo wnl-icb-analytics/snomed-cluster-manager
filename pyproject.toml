@@ -1,0 +1,10 @@
+[project]
+name = "snomed-cluster-manager"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit",
+    "pandas",
+    "altair",
+    "snowflake-snowpark-python",
+]

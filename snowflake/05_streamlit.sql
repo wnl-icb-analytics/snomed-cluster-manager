@@ -2,7 +2,8 @@
 ================================================================================
 SNOMED Cluster Manager Streamlit app
 ================================================================================
-Git-backed Streamlit in the app schema. ENGINEER owns the app, which runs with
+Git-backed Streamlit in the app schema. The container runtime installs the
+dependencies in pyproject.toml from the shared PyPI repository. ENGINEER owns the app, which runs with
 owner's rights. Analysts open it through the schema APP_USER role (Snowflake-
 Deployment access tables); they cannot call the procedures directly.
 
@@ -43,6 +44,7 @@ CREATE STREAMLIT IF NOT EXISTS SNOMED_CLUSTER_MANAGER
     COMPUTE_POOL = SYSTEM_COMPUTE_POOL_CPU
     QUERY_WAREHOUSE = 'NCL_ANALYTICS_XS'
     TITLE = 'SNOMED Cluster Manager'
+    ARTIFACT_REPOSITORIES = (snowflake.snowpark.pypi_shared_repository)
     COMMENT = 'Create, version and refresh ECL-defined SNOMED clusters';
 
 ALTER STREAMLIT SNOMED_CLUSTER_MANAGER ADD LIVE VERSION FROM LAST;
