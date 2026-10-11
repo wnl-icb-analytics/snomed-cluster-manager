@@ -4,6 +4,8 @@ SNOMED Cluster Manager functions
 ================================================================================
 ECL helper functions. Owned by ENGINEER, which holds usage on
 EXTERNAL_ACCESS.ONTOSERVER.ECL_DETAILS. Readers get usage through the schema reader role.
+Run after 01_tables.sql: SQL functions resolve unqualified tables against the
+current schema when created.
 ================================================================================
 */
 
@@ -45,7 +47,7 @@ CREATE OR REPLACE FUNCTION APPLICATIONS.SNOMED_CLUSTER_MANAGER.BUILD_UK_MED_PROD
 RETURNS VARCHAR
 LANGUAGE SQL
 AS '
-  SELECT BUILD_UK_MED_PRODUCT_ECL(
+  SELECT APPLICATIONS.SNOMED_CLUSTER_MANAGER.BUILD_UK_MED_PRODUCT_ECL(
     SPLIT(REGEXP_REPLACE(COALESCE(ingredient_codes_csv, ''''), ''\\\\s+'', ''''), '','')
   )
 ';
@@ -107,7 +109,7 @@ LANGUAGE SQL
 AS '
   SELECT code, display, system
   FROM TABLE(
-    UK_MED_PRODUCT_DETAILS(
+    APPLICATIONS.SNOMED_CLUSTER_MANAGER.UK_MED_PRODUCT_DETAILS(
       SPLIT(REGEXP_REPLACE(COALESCE(ingredient_codes_csv, ''''), ''\\\\s+'', ''''), '','')
     )
   )
