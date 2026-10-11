@@ -51,8 +51,8 @@ LESSON_STAGES = [
             {
                 "title": "Remove what you don't want with MINUS",
                 "why": (
-                    "Most definitions need exclusions. `MINUS` removes a branch; with `<<` it "
-                    "removes everything below that concept too."
+                    "When a hierarchy includes concepts your definition shouldn't, `MINUS` "
+                    "removes them; with `<<` it removes everything below that concept too."
                 ),
                 "ecl": (
                     "<< 73211009 |Diabetes mellitus|\n"
