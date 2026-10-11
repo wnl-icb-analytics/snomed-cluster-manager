@@ -5,10 +5,10 @@
 # Counts were checked against the terminology server on 11 October 2026 and
 # change with each SNOMED CT release.
 
-STATIN = "372912004 |Substance with 3-hydroxy-3-methylglutaryl-coenzyme A reductase inhibitor mechanism of action|"
-STATIN_PRODUCTS = (
+ACE_INHIBITOR = "372733002 |Substance with angiotensin-converting enzyme inhibitor mechanism of action|"
+ACE_INHIBITOR_PRODUCTS = (
     "<< 373873005 |Pharmaceutical / biologic product| :\n"
-    f"    127489000 |Has active ingredient| = << {STATIN}"
+    f"    127489000 |Has active ingredient| = << {ACE_INHIBITOR}"
 )
 DOAC_INGREDIENTS = (
     "(<< 698090000 |Apixaban| OR << 442031002 |Rivaroxaban|\n"
@@ -175,27 +175,28 @@ LESSON_STAGES = [
             {
                 "title": "Medicines by drug class",
                 "why": (
-                    "Many substances are grouped by mechanism of action, so one expression finds "
-                    "every statin, including any added later."
+                    "Substances are grouped by mechanism of action, so one expression finds "
+                    "every ACE inhibitor, including any added later."
                 ),
-                "ecl": f"<< (\n  {STATIN_PRODUCTS}\n)",
+                "ecl": f"<< (\n  {ACE_INHIBITOR_PRODUCTS}\n)",
                 "notice": (
-                    "About 1,000 codes. Combination products such as amlodipine with atorvastatin "
-                    "are included; decide whether your definition wants them. Save medicine "
-                    "clusters with the MEDICATION type."
+                    "About 1,740 codes, including branded products such as Accupro. Combination "
+                    "products such as amlodipine with lisinopril are included; decide whether your "
+                    "definition wants them. Save medicine clusters with the MEDICATION type."
                 ),
             },
             {
                 "title": "See what's inside a set with .",
                 "why": (
                     "A dot returns the attribute values instead of the concepts: here, every "
-                    "ingredient in a statin-containing product. It is a quick way to explore a set "
+                    "ingredient in an ACE inhibitor product. It is a quick way to explore a set "
                     "before saving it."
                 ),
-                "ecl": f"(\n  {STATIN_PRODUCTS}\n) . 127489000 |Has active ingredient|",
+                "ecl": f"(\n  {ACE_INHIBITOR_PRODUCTS}\n) . 127489000 |Has active ingredient|",
                 "notice": (
-                    "18 substances: the statins plus combination partners such as amlodipine and "
-                    "aspirin. Use them to spot combination products to exclude."
+                    "28 substances: the ACE inhibitors plus combination partners such as "
+                    "amlodipine, aspirin and atorvastatin. Use them to spot combination products "
+                    "to exclude."
                 ),
             },
         ],
