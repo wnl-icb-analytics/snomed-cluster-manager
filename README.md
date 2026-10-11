@@ -40,14 +40,9 @@ The SNOMED Cluster Manager provides healthcare analysts and researchers with too
 ## Installation
 
 ### Snowflake Deployment
-The app runs as a Git-backed Streamlit object in Snowflake (`DATA_LAKE.TERMINOLOGY`, owner ENGINEER), built from this repository's `main` branch.
+The app runs as a Git-backed Streamlit object, `APPLICATIONS.SNOMED_CLUSTER_MANAGER.SNOMED_CLUSTER_MANAGER`, built from this repository's `main` branch. ENGINEER owns it and it runs with owner's rights; analysts open it through the schema app-user role.
 
-To deploy a change after merging to `main`:
-
-```sql
-USE ROLE ENGINEER;
-ALTER GIT REPOSITORY DATA_LAKE.TERMINOLOGY."snomed-cluster-manager" FETCH;
-```
+To deploy a change after merging to `main`, run the commands at the top of `snowflake/05_streamlit.sql`. The fetch uses your GitHub sign-in through the Snowflake GitHub App; if it fails with a refresh-token error, sign in again from Snowsight (**Projects » Workspaces » From Git repository**, OAuth2).
 
 The backend lives in `APPLICATIONS.SNOMED_CLUSTER_MANAGER`. Its DDL is in `snowflake/`:
 
@@ -57,8 +52,9 @@ The backend lives in `APPLICATIONS.SNOMED_CLUSTER_MANAGER`. Its DDL is in `snowf
 | `02_functions.sql` | ECL helper functions |
 | `03_procedures.sql` | Upsert, refresh, rename, delete and version procedures |
 | `04_task.sql` | Weekly refresh of all clusters (Sunday 02:00 UTC) |
+| `05_streamlit.sql` | Git repository, Streamlit app and deploy commands |
 
-Schema creation and access are managed in the Snowflake-Deployment repository (RBAC example for `APPLICATIONS.SNOMED_CLUSTER_MANAGER`). `REFERENCE.TERMINOLOGY.COMBINED_CODESETS` and its refresh are defined in `Snowflake-Deployment/Terminology/`. `DATA_LAKE__NCL.TERMINOLOGY` keeps compatibility views and procedures under the old names.
+Schema creation and access are managed in the Snowflake-Deployment repository (RBAC example for `APPLICATIONS.SNOMED_CLUSTER_MANAGER`). `REFERENCE.TERMINOLOGY.COMBINED_CODESETS` and its refresh are defined in `Snowflake-Deployment/Terminology/`. `DATA_LAKE__NCL.TERMINOLOGY` keeps read-only compatibility views under the old names until consumers have moved.
 
 ### Local Development
 For local development:
