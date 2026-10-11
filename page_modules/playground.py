@@ -9,6 +9,7 @@ from services.cluster_service import (
     get_all_clusters,
     test_ecl_expression,
 )
+from page_modules.ecl_lessons import LESSON_STAGES
 
 
 def render_playground():
@@ -23,20 +24,11 @@ def render_playground():
     
     st.caption("Test an ECL expression, inspect its codes, then save it as a cluster.")
     
-    # Always-visible ECL guidance
-    st.markdown("### ECL Quick Reference")
-    st.markdown("""
-    `<< concept` includes the concept and its subtypes; `< concept` includes subtypes
-    only. Refine with `: attribute = value` and combine expressions with `AND`, `OR`
-    or `MINUS`.
+    st.markdown(
+        "New to ECL? Work through **Learn ECL** below the editor. Each lesson loads an "
+        "example and tests it, so you can see what the expression returns."
+    )
 
-    Example: `<< 73211009 |Diabetes mellitus|`
-
-    Medication products: `<< (<< 373873005 |Pharmaceutical / biologic product| : { 762949000 |Has precise active ingredient| = << 387517004 |Paracetamol| })`
-
-    *Text between `|` pipes is optional and used only for readability.*
-    """)
-    
     # Initialize session state for playground ECL and results
     if 'ecl_input' not in st.session_state:
         st.session_state.ecl_input = ""
@@ -45,7 +37,7 @@ def render_playground():
     if 'playground_tested_ecl' not in st.session_state:
         st.session_state.playground_tested_ecl = None
 
-    # Load an example or an expression passed from the details page into the input.
+    # Load a lesson example or an expression passed from the details page into the input.
     # Write to the widget key directly - a `value=` arg is ignored once the widget
     # key exists in session state, so setting another variable wouldn't update it.
     if "selected_example_ecl" in st.session_state:
@@ -70,7 +62,12 @@ def render_playground():
 
     # Get the current ECL expression value
     test_ecl = st.session_state.ecl_input.strip()
-    
+
+    # Lessons load an example and test it straight away
+    if st.session_state.pop("auto_test_ecl", False):
+        test_clicked = True
+        st.toast("Example loaded and tested: see the results under the editor.")
+
     # Test button clicked - run test and store results
     if test_clicked and test_ecl:
         with st.spinner("Testing ECL expression..."):
@@ -173,61 +170,38 @@ def render_playground():
                             st.session_state.selected_source = None
                             st.session_state.page = 'details'
                             rerun()
-    # Examples section with diverse complexity levels
+    # Guided lessons
     st.markdown("---")
-    st.subheader("📚 Example ECL Expressions")
-    st.caption("Click any example to load it into the expression box above:")
-    
-    # Organize examples in columns for better layout
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("**🟢 Basic**")
-        basic_examples = [
-            ("Type 2 Diabetes", "<<44054006 |Type 2 diabetes mellitus|"),
-            ("Hypertension", "<< 38341003 |Hypertensive disorder, systemic arterial|"),
-            ("Learning disability", "<< 110359009 |Learning disability|"),
-            ("HbA1c + history", "<<1003671000000109 |Hemoglobin A1c level| {{ +HISTORY-MAX }}")
-        ]
-        
-        for name, expression in basic_examples:
-            if st.button(f"📄 {name}", key=f"basic_{name}", use_container_width=True):
-                st.session_state["selected_example_ecl"] = expression
-                rerun()
-    
-    with col2:
-        st.markdown("**🟡 Intermediate**")
-        refined_examples = [
-            ("Diabetes excl. gestational", "<< 73211009 |Diabetes mellitus| MINUS << 11687002 |Gestational diabetes mellitus|"),
-            ("Reference set members", "^ 999002381000000108 |Safeguarding issues simple reference set|"),
-            ("Viral infections", "<< 40733004 |Infectious disease| : 246075003 |Causative agent| = << 49872002 |Virus|"),
-            ("Osteoporotic fractures", "<< 125605004 |Fracture of bone| : 363698007 |Finding site| = (<< 29627003 |Neck of femur structure| OR << 75129005 |Distal radius structure|)")
-        ]
-        
-        for name, expression in refined_examples:
-            if st.button(f"🔧 {name}", key=f"refined_{name}", use_container_width=True):
-                st.session_state["selected_example_ecl"] = expression
-                rerun()
-    
-    with col3:
-        st.markdown("**🔴 Advanced**")
-        complex_examples = [
-            ("Drug ingredients (chained)", "<< 373873005 |Pharmaceutical / biologic product| . 762949000 |Has precise active ingredient|"),
-            ("Viral lung infections (grouped)", "<< 40733004 |Infectious disease| : { 246075003 |Causative agent| = << 49872002 |Virus|, 363698007 |Finding site| = << 39607008 |Lung| }"),
-            ("Body parts that fracture (reverse)", "< 91723000 |Anatomical structure| : R 363698007 |Finding site| = << 125605004 |Fracture of bone|"),
-            ("Anything causing edema (wildcard)", "* : << 47429007 |Associated with| = << 267038008 |Edema|")
-        ]
-        
-        for name, expression in complex_examples:
-            if st.button(f"⚡ {name}", key=f"complex_{name}", use_container_width=True):
-                st.session_state["selected_example_ecl"] = expression
-                rerun()
-    
-    st.caption("💡 **Tip:** Start with green examples (basic), then try yellow (intermediate), then red (advanced complex logic).")
-    
+    st.subheader("📚 Learn ECL")
+    st.caption(
+        "Work through the stages in order. **Try it** loads the example into the editor above "
+        "and tests it. Counts were checked on 11 October 2026 and change with each SNOMED CT release."
+    )
+
+    tabs = st.tabs([stage["stage"] for stage in LESSON_STAGES])
+    number = 0
+    for tab, stage in zip(tabs, LESSON_STAGES):
+        with tab:
+            for lesson in stage["lessons"]:
+                number += 1
+                with st.container(border=True):
+                    st.markdown(f"**{number}. {lesson['title']}**")
+                    st.markdown(lesson["why"])
+                    st.code(lesson["ecl"], language=None)
+                    buttons = st.columns([1, 1, 3])
+                    with buttons[0]:
+                        if st.button("▶ Try it", key=f"lesson_{number}", use_container_width=True):
+                            _load_lesson_example(lesson["ecl"])
+                    compare = lesson.get("compare")
+                    if compare:
+                        with buttons[1]:
+                            if st.button(compare["label"], key=f"lesson_{number}_compare", use_container_width=True):
+                                _load_lesson_example(compare["ecl"])
+                    st.caption(f"**What to notice:** {lesson['notice']}")
+
     # Comprehensive documentation sections
     st.markdown("---")
-    st.subheader("📖 ECL Documentation")
+    st.subheader("📖 ECL Reference")
     
     with st.expander("💡 Resources & Tools", expanded=False):
         st.markdown("""
@@ -429,14 +403,6 @@ def render_playground():
         Keep the ingredient and its strength attributes in the same `{ attribute group }`,
         especially for combination products.
 
-        **2. Laboratory Reference Ranges:**
-        ```go
-        < 365845006 |Finding of laboratory test result| :
-            1149367008 |Has normal range low value| <= #4.0,
-            1149366004 |Has normal range high value| >= #11.0
-        ```
-        *"Find lab tests with normal ranges spanning 4.0 to 11.0"*
-
         **All Comparison Operators:**
         - `= #value` - exactly equals
         - `!= #value` - not equals
@@ -590,3 +556,10 @@ def render_playground():
         ```
         (Matches 'Associated with', 'Due to', 'After', 'Causative agent' etc.)
         """)
+
+
+def _load_lesson_example(expression):
+    """Load a lesson expression into the editor and test it on the next run."""
+    st.session_state["selected_example_ecl"] = expression
+    st.session_state["auto_test_ecl"] = True
+    rerun()
