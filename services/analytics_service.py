@@ -5,7 +5,7 @@
 import pandas as pd
 import streamlit as st
 from database import get_connection
-from config import DB_SCHEMA, DB_ANALYTICS, DB_STORE, DB_DEMOGRAPHICS
+from config import APP_SCHEMA, CODESETS_TABLE, DB_ANALYTICS, DB_STORE, DB_DEMOGRAPHICS
 
 
 # Get connection instance
@@ -22,8 +22,8 @@ def _code_source(source=None):
     if source and source != 'ECL_CACHE':
         safe_src = str(source).replace("'", "''")
         return (f"(SELECT code, code_description AS display, cluster_id "
-                f"FROM {DB_SCHEMA}.COMBINED_CODESETS WHERE source = '{safe_src}')")
-    return f"{DB_SCHEMA}.ecl_cache"
+                f"FROM {CODESETS_TABLE} WHERE source = '{safe_src}')")
+    return f"{APP_SCHEMA}.ecl_cache"
 
 
 def get_observation_analytics(cluster_id, source=None):

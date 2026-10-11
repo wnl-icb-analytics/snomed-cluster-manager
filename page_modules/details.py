@@ -13,7 +13,7 @@ from components.chart_components import create_practice_scatter, create_org_bar_
 from utils.helpers import format_time_ago, format_ecl_for_display
 from utils.charts import create_population_pyramid
 from services.codeset_service import is_authored, get_codeset_meta, get_codeset_codes, source_label
-from config import CLUSTER_TYPE_DISPLAY, DB_SCHEMA
+from config import CLUSTER_TYPE_DISPLAY, APP_SCHEMA, CODESETS_TABLE
 
 
 def render_details():
@@ -189,7 +189,7 @@ SELECT
     code,
     display,
     system
-FROM {DB_SCHEMA}.ecl_cache
+FROM {APP_SCHEMA}.ecl_cache
 WHERE cluster_id = '{cluster_id}'
 ORDER BY code;"""
         st.code(sql_query, language='sql')
@@ -284,7 +284,7 @@ def render_external_details(cluster_id, source):
     st.markdown("Copy this query to get all codes in this codeset:")
     sql_query = f"""-- Get all codes in codeset {cluster_id} ({source_label(source)})
 SELECT code, code_description, source
-FROM {DB_SCHEMA}.combined_codesets
+FROM {CODESETS_TABLE}
 WHERE cluster_id = '{cluster_id}'
   AND source = '{source}'
 ORDER BY code;"""

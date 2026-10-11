@@ -7,7 +7,7 @@
 import pandas as pd
 import streamlit as st
 from database import get_connection
-from config import DB_SCHEMA
+from config import APP_SCHEMA, CODESETS_TABLE
 
 
 conn = get_connection()
@@ -57,8 +57,8 @@ def get_codeset_index():
             COALESCE(m.record_count, 0) AS CODE_COUNT,
             c.updated_at AS UPDATED_AT,
             c.updated_by AS UPDATED_BY
-        FROM {DB_SCHEMA}.ECL_CLUSTERS c
-        LEFT JOIN {DB_SCHEMA}.ECL_CACHE_METADATA m ON c.cluster_id = m.cluster_id
+        FROM {APP_SCHEMA}.ECL_CLUSTERS c
+        LEFT JOIN {APP_SCHEMA}.ECL_CACHE_METADATA m ON c.cluster_id = m.cluster_id
         UNION ALL
         SELECT
             source AS SOURCE,
@@ -69,7 +69,7 @@ def get_codeset_index():
             COUNT(*) AS CODE_COUNT,
             NULL AS UPDATED_AT,
             NULL AS UPDATED_BY
-        FROM {DB_SCHEMA}.COMBINED_CODESETS
+        FROM {CODESETS_TABLE}
         WHERE source <> '{AUTHORED_SOURCE}'
         GROUP BY source, cluster_id
         """
@@ -90,7 +90,7 @@ def get_codeset_meta(cluster_id, source):
             cluster_id AS CLUSTER_ID,
             MAX(cluster_description) AS DESCRIPTION,
             COUNT(*) AS CODE_COUNT
-        FROM {DB_SCHEMA}.COMBINED_CODESETS
+        FROM {CODESETS_TABLE}
         WHERE cluster_id = '{safe_id}' AND source = '{safe_src}'
         GROUP BY source, cluster_id
         """
@@ -107,7 +107,7 @@ def get_codeset_codes(cluster_id, source):
         safe_src = str(source).replace("'", "''")
         query = f"""
         SELECT code AS CODE, code_description AS DISPLAY
-        FROM {DB_SCHEMA}.COMBINED_CODESETS
+        FROM {CODESETS_TABLE}
         WHERE cluster_id = '{safe_id}' AND source = '{safe_src}'
         ORDER BY code
         """

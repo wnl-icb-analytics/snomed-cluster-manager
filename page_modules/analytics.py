@@ -20,7 +20,7 @@ from utils.charts import (
     create_deprivation_bar_chart, create_language_bar_chart, create_neighbourhood_bar_chart
 )
 from services.codeset_service import is_authored, get_codeset_meta, get_codeset_codes, source_label
-from config import DB_ANALYTICS, DB_SCHEMA, DB_STORE, DB_DEMOGRAPHICS
+from config import DB_ANALYTICS, APP_SCHEMA, CODESETS_TABLE, DB_STORE, DB_DEMOGRAPHICS
 
 
 def render_analytics():
@@ -79,19 +79,19 @@ def render_analytics():
     # SQL-template building blocks: authored clusters live in ecl_cache, brought-in
     # codesets live in combined_codesets (filtered by source).
     if authored:
-        tmpl_code_join = f"{DB_SCHEMA}.ecl_cache ec"
+        tmpl_code_join = f"{APP_SCHEMA}.ecl_cache ec"
         tmpl_code_where = f"ec.cluster_id = '{cluster_id}'"
         tmpl_codes_query = f"""-- Get all codes in cluster {cluster_id}
 SELECT code, display, system
-FROM {DB_SCHEMA}.ecl_cache
+FROM {APP_SCHEMA}.ecl_cache
 WHERE cluster_id = '{cluster_id}'
 ORDER BY code;"""
     else:
-        tmpl_code_join = f"{DB_SCHEMA}.combined_codesets ec"
+        tmpl_code_join = f"{CODESETS_TABLE} ec"
         tmpl_code_where = f"ec.cluster_id = '{cluster_id}' AND ec.source = '{source}'"
         tmpl_codes_query = f"""-- Get all codes in codeset {cluster_id} ({source})
 SELECT code, code_description, source
-FROM {DB_SCHEMA}.combined_codesets
+FROM {CODESETS_TABLE}
 WHERE cluster_id = '{cluster_id}' AND source = '{source}'
 ORDER BY code;"""
 

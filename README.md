@@ -30,7 +30,8 @@ The SNOMED Cluster Manager provides healthcare analysts and researchers with too
 - **SQL Templates**: Ready-to-use queries for data export
 
 ### Data Architecture Integration
-- Connects to modernized data lake architecture (DATA_LAKE__NCL.TERMINOLOGY)
+- Keeps its tables, procedures and weekly refresh task in `APPLICATIONS.SNOMED_CLUSTER_MANAGER`
+- Reads every codeset, including its own clusters, from `REFERENCE.TERMINOLOGY.COMBINED_CODESETS`
 - Integrates with OLIDS observation and medication data (DATA_LAKE.OLIDS)
 - Uses demographics from REPORTING.OLIDS_PERSON_DEMOGRAPHICS
 - Maintains ECL cache for performance with external SNOMED terminology services
@@ -38,11 +39,25 @@ The SNOMED Cluster Manager provides healthcare analysts and researchers with too
 ## Installation
 
 ### Snowflake Deployment
-The application is deployed as a Streamlit app in Snowflake using Git integration:
+The app runs as a Git-backed Streamlit object in Snowflake (`DATA_LAKE.TERMINOLOGY`, owner ENGINEER), built from this repository's `main` branch.
 
-1. Run the provided `snowflake-git-integration.sql` worksheet to set up the Git repository integration
-2. The app will be available in Snowsight under "Streamlit"
-3. Updates are pulled automatically from the GitHub repository
+To deploy a change after merging to `main`:
+
+```sql
+USE ROLE ENGINEER;
+ALTER GIT REPOSITORY DATA_LAKE.TERMINOLOGY."snomed-cluster-manager" FETCH;
+```
+
+The backend lives in `APPLICATIONS.SNOMED_CLUSTER_MANAGER`. Its DDL is in `snowflake/`:
+
+| File | Contents |
+|---|---|
+| `01_tables.sql` | Cluster, cache, metadata, change-log and version tables |
+| `02_functions.sql` | ECL helper functions |
+| `03_procedures.sql` | Upsert, refresh, rename, delete and version procedures |
+| `04_task.sql` | Weekly refresh of all clusters (Sunday 02:00 UTC) |
+
+Schema creation and access are managed in the Snowflake-Deployment repository (RBAC example for `APPLICATIONS.SNOMED_CLUSTER_MANAGER`). `REFERENCE.TERMINOLOGY.COMBINED_CODESETS` and its refresh are defined in `Snowflake-Deployment/Terminology/`. `DATA_LAKE__NCL.TERMINOLOGY` keeps compatibility views and procedures under the old names.
 
 ### Local Development
 For local development:
@@ -90,7 +105,8 @@ Key configuration is managed in `config.py`:
 
 ```python
 # Database connections
-DB_SCHEMA = "DATA_LAKE__NCL.TERMINOLOGY"      # ECL cache tables
+APP_SCHEMA = "APPLICATIONS.SNOMED_CLUSTER_MANAGER"            # App tables and procedures
+CODESETS_TABLE = "REFERENCE.TERMINOLOGY.COMBINED_CODESETS"    # All codesets
 DB_STORE = "DATA_LAKE.OLIDS"                  # Clinical data
 DB_DEMOGRAPHICS = "REPORTING.OLIDS_PERSON_DEMOGRAPHICS"  # Demographics
 
@@ -115,6 +131,7 @@ The application follows a modular structure:
 - **ECL_CACHE** - Cached SNOMED codes for each cluster
 - **ECL_CACHE_METADATA** - Refresh timestamps and statistics
 - **ECL_CLUSTER_CHANGES** - Audit trail of code changes
+- **ECL_CLUSTER_VERSIONS** - Append-only history of authored cluster definitions
 
 ## Data Privacy and Security
 
