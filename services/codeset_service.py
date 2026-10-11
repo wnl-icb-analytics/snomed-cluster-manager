@@ -7,17 +7,15 @@
 import pandas as pd
 import streamlit as st
 from database import get_connection
-from config import APP_SCHEMA, CODESETS_TABLE
+from config import APP_SCHEMA, AUTHORED_SOURCE, CODESETS_TABLE
+from utils.codeset_sql import codeset_filter
 
 
 conn = get_connection()
 
-# Codesets authored in this app live in ECL_CACHE; every other source is brought in.
-AUTHORED_SOURCE = 'ECL_CACHE'
-
 # Friendly labels for the brought-in sources that feed COMBINED_CODESETS
 SOURCE_LABELS = {
-    'ECL_CACHE': 'Authored',
+    AUTHORED_SOURCE: 'Authored',
     'PCD': 'PCD / GDPPR',
     'OPENCODELISTS': 'OpenCodelists',
     'LTC_LCS': 'LTC LCS',
@@ -82,8 +80,6 @@ def get_codeset_index():
 def get_codeset_meta(cluster_id, source):
     """Single-row metadata for a brought-in codeset."""
     try:
-        safe_id = str(cluster_id).replace("'", "''")
-        safe_src = str(source).replace("'", "''")
         query = f"""
         SELECT
             source AS SOURCE,
@@ -91,7 +87,7 @@ def get_codeset_meta(cluster_id, source):
             MAX(cluster_description) AS DESCRIPTION,
             COUNT(*) AS CODE_COUNT
         FROM {CODESETS_TABLE}
-        WHERE cluster_id = '{safe_id}' AND source = '{safe_src}'
+        WHERE {codeset_filter(cluster_id, source)}
         GROUP BY source, cluster_id
         """
         return conn.sql(query).to_pandas()
@@ -101,14 +97,12 @@ def get_codeset_meta(cluster_id, source):
 
 
 def get_codeset_codes(cluster_id, source):
-    """Member codes for a brought-in codeset from COMBINED_CODESETS."""
+    """Published member codes for an authored or brought-in codeset."""
     try:
-        safe_id = str(cluster_id).replace("'", "''")
-        safe_src = str(source).replace("'", "''")
         query = f"""
         SELECT code AS CODE, code_description AS DISPLAY
         FROM {CODESETS_TABLE}
-        WHERE cluster_id = '{safe_id}' AND source = '{safe_src}'
+        WHERE {codeset_filter(cluster_id, source)}
         ORDER BY code
         """
         return conn.sql(query).to_pandas()

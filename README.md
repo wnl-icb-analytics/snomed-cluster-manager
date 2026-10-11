@@ -32,6 +32,7 @@ The SNOMED Cluster Manager provides healthcare analysts and researchers with too
 ### Data Architecture Integration
 - Keeps its tables, procedures and weekly refresh task in `APPLICATIONS.SNOMED_CLUSTER_MANAGER`
 - Reads every codeset, including its own clusters, from `REFERENCE.TERMINOLOGY.COMBINED_CODESETS`
+- Analytics and SQL examples use published membership, filtered by source and cluster ID. Cluster changes appear after the reference data refresh.
 - Integrates with OLIDS observation and medication data (DATA_LAKE.OLIDS)
 - Uses demographics from REPORTING.OLIDS_PERSON_DEMOGRAPHICS
 - Maintains ECL cache for performance with external SNOMED terminology services

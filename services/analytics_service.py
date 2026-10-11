@@ -5,25 +5,12 @@
 import pandas as pd
 import streamlit as st
 from database import get_connection
-from config import APP_SCHEMA, CODESETS_TABLE, DB_ANALYTICS, DB_STORE, DB_DEMOGRAPHICS
+from config import DB_ANALYTICS, DB_STORE, DB_DEMOGRAPHICS
+from utils.codeset_sql import codeset_code_source as _code_source
 
 
 # Get connection instance
 conn = get_connection()
-
-
-def _code_source(source=None):
-    """Code-membership source for a codeset.
-
-    Authored clusters read live ecl_cache; brought-in codesets read
-    COMBINED_CODESETS filtered by source. The returned subquery exposes
-    (code, cluster_id) so existing `ec.cluster_id = '...'` filters work for both.
-    """
-    if source and source != 'ECL_CACHE':
-        safe_src = str(source).replace("'", "''")
-        return (f"(SELECT code, code_description AS display, cluster_id "
-                f"FROM {CODESETS_TABLE} WHERE source = '{safe_src}')")
-    return f"{APP_SCHEMA}.ecl_cache"
 
 
 def get_observation_analytics(cluster_id, source=None):

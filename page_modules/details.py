@@ -13,7 +13,8 @@ from components.chart_components import create_practice_scatter, create_org_bar_
 from utils.helpers import format_time_ago, format_ecl_for_display
 from utils.charts import create_population_pyramid
 from services.codeset_service import is_authored, get_codeset_meta, get_codeset_codes, source_label
-from config import CLUSTER_TYPE_DISPLAY, APP_SCHEMA, CODESETS_TABLE
+from config import CLUSTER_TYPE_DISPLAY
+from utils.codeset_sql import codeset_codes_query
 
 
 def render_details():
@@ -183,15 +184,9 @@ def render_details():
     # SQL query section
     if cluster['ECL_EXPRESSION']:
         st.subheader("💻 SQL Query")
-        st.markdown("Copy this query to get all SNOMED codes in this cluster:")
-        sql_query = f"""-- Get all SNOMED codes in cluster {cluster_id}
-SELECT 
-    code,
-    display,
-    system
-FROM {APP_SCHEMA}.ecl_cache
-WHERE cluster_id = '{cluster_id}'
-ORDER BY code;"""
+        st.markdown("Copy this query to get the published SNOMED codes in this cluster:")
+        sql_query = codeset_codes_query(cluster_id)
+        st.caption("Cluster changes appear after the reference data refresh.")
         st.code(sql_query, language='sql')
     
     # Change history
@@ -281,11 +276,6 @@ def render_external_details(cluster_id, source):
 
     # SQL query section (mirrors authored details)
     st.subheader("💻 SQL Query")
-    st.markdown("Copy this query to get all codes in this codeset:")
-    sql_query = f"""-- Get all codes in codeset {cluster_id} ({source_label(source)})
-SELECT code, code_description, source
-FROM {CODESETS_TABLE}
-WHERE cluster_id = '{cluster_id}'
-  AND source = '{source}'
-ORDER BY code;"""
+    st.markdown("Copy this query to get the published codes in this codeset:")
+    sql_query = codeset_codes_query(cluster_id, source)
     st.code(sql_query, language='sql')

@@ -6,7 +6,7 @@ import streamlit as st
 import pandas as pd
 import time
 from database import rerun
-from services.cluster_service import get_all_clusters, get_cluster_cache, refresh_cluster
+from services.cluster_service import get_all_clusters, refresh_cluster
 from services.analytics_service import (
     get_observation_analytics, get_medication_analytics, get_distinct_persons_obs, 
     get_distinct_persons_med, get_observation_time_series, get_medication_time_series,
@@ -20,7 +20,8 @@ from utils.charts import (
     create_deprivation_bar_chart, create_language_bar_chart, create_neighbourhood_bar_chart
 )
 from services.codeset_service import is_authored, get_codeset_meta, get_codeset_codes, source_label
-from config import DB_ANALYTICS, APP_SCHEMA, CODESETS_TABLE, DB_STORE, DB_DEMOGRAPHICS
+from config import DB_ANALYTICS, CODESETS_TABLE, DB_STORE, DB_DEMOGRAPHICS
+from utils.codeset_sql import codeset_codes_query, codeset_filter
 
 
 def render_analytics():
@@ -72,28 +73,16 @@ def render_analytics():
         st.markdown(f"📥 **{source_label(source)}** · {mode_badge}")
         st.caption("Mode is set on the codeset's details page")
 
-    def cluster_member_codes():
-        """All member codes for this codeset: authored cache or brought-in source."""
-        return get_cluster_cache(cluster_id) if authored else get_codeset_codes(cluster_id, source)
+    member_codes = get_codeset_codes(cluster_id, source)
 
-    # SQL-template building blocks: authored clusters live in ecl_cache, brought-in
-    # codesets live in combined_codesets (filtered by source).
-    if authored:
-        tmpl_code_join = f"{APP_SCHEMA}.ecl_cache ec"
-        tmpl_code_where = f"ec.cluster_id = '{cluster_id}'"
-        tmpl_codes_query = f"""-- Get all codes in cluster {cluster_id}
-SELECT code, display, system
-FROM {APP_SCHEMA}.ecl_cache
-WHERE cluster_id = '{cluster_id}'
-ORDER BY code;"""
-    else:
-        tmpl_code_join = f"{CODESETS_TABLE} ec"
-        tmpl_code_where = f"ec.cluster_id = '{cluster_id}' AND ec.source = '{source}'"
-        tmpl_codes_query = f"""-- Get all codes in codeset {cluster_id} ({source})
-SELECT code, code_description, source
-FROM {CODESETS_TABLE}
-WHERE cluster_id = '{cluster_id}' AND source = '{source}'
-ORDER BY code;"""
+    def cluster_member_codes():
+        """Published membership used by both counts and unused-code lists."""
+        return member_codes
+
+    tmpl_code_join = f"{CODESETS_TABLE} ec"
+    tmpl_code_where = codeset_filter(cluster_id, source, alias="ec")
+    tmpl_codes_query = codeset_codes_query(cluster_id, source)
+    st.caption("Analytics use published code membership. Cluster changes appear after the reference data refresh.")
 
     # Authored clusters can be empty before first refresh; brought-in always have codes
     if authored and (not record_count or record_count == 0):
@@ -106,6 +95,8 @@ ORDER BY code;"""
                 rerun()
             else:
                 st.error(f"❌ {result}")
+    elif member_codes.empty:
+        st.info("Published codes are not available yet. Analytics will be available after the reference data refresh.")
     else:
         # Create tabs based on cluster type
         if cluster_type == 'OBSERVATION':
@@ -836,7 +827,7 @@ ORDER BY month DESC;"""
                 query5 = f"""-- Get top medications by patient count for cluster {cluster_id}
 SELECT 
     ec.code,
-    ec.display,
+    ec.code_description AS display,
     COUNT(DISTINCT d.person_id) as patient_count,
     COUNT(DISTINCT mo.id) as total_orders,
     ROUND(COUNT(DISTINCT mo.id) * 1.0 / COUNT(DISTINCT d.person_id), 1) as avg_orders_per_patient
@@ -844,7 +835,7 @@ FROM {tmpl_code_join}
 JOIN {DB_STORE}.medication_order mo ON ec.code = mo.mapped_concept_code
 JOIN {DB_DEMOGRAPHICS}.DIM_PERSON_DEMOGRAPHICS d ON mo.person_id = d.person_id
 WHERE {tmpl_code_where}
-GROUP BY ec.code, ec.display
+GROUP BY ec.code, ec.code_description
 ORDER BY patient_count DESC
 LIMIT 20;"""
                 st.code(query5, language='sql')
